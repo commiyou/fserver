@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>TSV {{name}}</title>
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@3.3.7/dist/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
+
+    <link rel="stylesheet" href="https://cdn.datatables.net/2.0.3/css/dataTables.dataTables.css" />
+    <style>
+    body {
+      padding: 20px;
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    .form-control {
+      width: auto;
+    }
+    </style>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+    <script src="https://cdn.datatables.net/2.0.3/js/dataTables.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@3.3.7/dist/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
+  </head>
+  <body>
+    <div class="form-group">
+      <label for="key">Choose req key:</label>
+      <select id="key" class="form-control">
+        <option value="">--Choose key--</option>
+        {% for column in columns %}
+        <option value="{{column}}">{{ column }}</option>
+        {% endfor %}
+      </select>
+
+      <div class="input-group">
+        <div class="input-group-prepend">
+          <a id="prev-value" href=""  class="btn btn-outline-secondary" > </a>
+        </div>
+        <label for="input-value" id="label-value"></label>
+        <div class="input-group-append">
+          <a id="next-value" href="" class="btn btn-outline-secondary"> </a>
+        </div>
+        <input class="form-control" list="value" id="input-value"> </input>
+      </div>
+
+      <datalist id="value">
+      </datalist>
+    </div>
+
+    <div class="form-group">
+      <label for="length">Choose req length:</label>
+      <select id="length" class="form-control">
+        <option value="1000" selected="true" >1k</option>
+        <option value="5000">5k</option>
+        <option value="10000"> 1w </option>
+      </select>
+      <div class="input-group">
+        <div class="input-group-prepend">
+          <a id="previous" href=""> << </a>
+        </div>
+        <span id="start">{{start}}</span>
+        <div class="input-group-append">
+          <a id="next" href=""> >> </a>
+        </div>
+      </div>
+      <input class="form-control" type="text" id="input-start" value="{{start}}">
+
+    </div>
+    <table id="tsvTable" class="display compact hover">
+      <thead>
+        <tr>
+          {% for column in columns %}
+          <th>{{ column }}</th>
+          {% endfor %}
+        </tr>
+
+      </thead>
+      <tbody>
+      </tbody>
+    </table>
+    <script>
+    $(document).ready(function() {
+      var start = parseInt($('#start').text());
+      var length = parseInt($('#length').val());
+      var table = $('#tsvTable').DataTable({
+        //serverSide: true,
+        // processing: true,
+        ajax: {
+          url: "/api/tsv/{{path}}?start=" + start + "&length=" + length,
+          dataSrc:'data'
+        },
+        columns: [
+          {% for column in columns %}
+            { data: "{{ column }}" },
+          {% endfor %}
+        ],
+        stateSave: true,
+        scrollCollapse: true,
+        lengthMenu: [
+          [20, 100,  -1],
+          [20, 100, 'All']
+        ],
+      });
+
+      $('#previous').on('click', function(e) {
+        e.preventDefault();
+        var start = parseInt($('#start').text());
+        var length = parseInt($('#length').val());
+        if (start > 0) {
+
+          key = $("#key").val();
+          //value = $("#value").val();
+          start -= length;
+          if (start < 0) start = 0;
+          $('#start').text(start);  
+          $('#input-start').val(start);  // 更新输入框的pageno
+          table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + key + "&value=" + value).load();
+        }
+      });
+
+      $('#next').on('click', function(e) {
+        e.preventDefault();
+        var start = parseInt($('#start').text());
+        var length = parseInt($('#length').val());
+        key = $("#key").val();
+        start += length;
+        $('#start').text(start);  // 更新页面上的start
+        $('#input-start').val(start);  // 更新输入框的start
+        //table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + key + "&value=" + value).load();
+        table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + key + "&value=" + value).load();
+      });
+
+      $('#length').on('change', function() {
+        key = $("#key").val();
+        length = parseInt($(this).val());
+        table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + key + "&value=" + value).load();
+      });
+
+      // 当用户在输入框中输入start并按回车时，更新start并重新加载表格
+      $('#input-start').on('keypress', function(e) {
+        if (e.which == 13) {
+          start = parseInt($(this).val());
+          if (start < 0)  start = 0;
+          $('#start').text(start);  // 更新页面上的start
+          table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + key + "&value=" + value).load();
+          return false;  // 阻止表单的默认提交行为
+        }
+      });
+
+
+      $('#key').on('change', function() {
+        key = $(this).val();
+
+        $.getJSON("/api/tsv/key/{{path}}?key=" + key, function(data) {
+          $('#value').empty();
+          $.each(data, function(i, item) {
+            $('#value').append($('<option>', { 
+              value: item,
+              text: item 
+            }));
+          });
+          value = $("#value :first-child").text();
+          if (value) {
+            //$("#label-value").text(first_value);
+            update_value_labels(value);
+            table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length + "&key=" + key + "&value=" + value).load();
+          }
+        });
+
+      });
+
+      function update_value_labels(value) {
+        if (!value) return;
+        $("#label-value").text(value)
+        var selectedOption = $("#value option[value='" + value + "']");
+        console.log("select option=" + value);
+        var prevOption = selectedOption.prev();
+        console.log("prev option=" + prevOption.val());
+        var nextOption = selectedOption.next();
+        if (prevOption.length > 0) {
+          $('#prev-value').text("<< " + prevOption.val());
+          $('#prev-value').attr("value", prevOption.val());
+          $('#prev-value').show();
+        } else {
+          $('#prev-value').hide();
+        }
+        if (nextOption.length > 0) {
+          $('#next-value').text(nextOption.val() + " >>");
+          $('#next-value').attr("value", nextOption.val());
+          $('#next-value').show();
+        } else {
+          $('#next-value').hide();
+        }
+      }
+
+      $('#input-value').on('change', function(e) {
+        value = $(this).val();
+        if (!value) return;
+        update_value_labels(value);
+
+        console.log("req key=" + key + "&value=" + value)
+        table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length + "&key=" + key + "&value=" + value).load();
+        $(this).val("");
+      });
+
+      $('#prev-value, #next-value').on('click', function(e) {
+        e.preventDefault();
+        value = $(this).attr('value')
+        update_value_labels(value);
+        //table.ajax.url($(this).attr('href')).load();
+        table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length + "&key=" + key + "&value=" + value).load();
+      });
+
+    });
+
+    </script>
+  </body>
+</html>

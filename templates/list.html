@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>File Browser</title>
+    <link rel="stylesheet" href="https://cdn.datatables.net/2.0.3/css/dataTables.dataTables.css" />
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+    <script src="https://cdn.datatables.net/2.0.3/js/dataTables.js"></script>
+  </head>
+  <body>
+    <form action="/upload/{{path}}" method="post" enctype="multipart/form-data">
+      <input type="file" name="file">
+      <input type="submit" value="Upload">
+    </form>
+    <table id="fileTable" class="display compact hover" style="width:95%">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>real size</th>
+          <th>Size</th>
+          <th>Type</th>
+          <th>Actions</th>
+          <th>Time</th>
+          <th>real time</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for file in files %}
+        <tr>
+          <td><a href="/list/{{path}}/{{file.name}}">{{file.name}}</a></td>
+          <td>{{file.size}}</td>
+          <td>{{file.human_size}}</td>
+          <td>{{file.type}}</td>
+          <td>
+            {% if file.type == "file" %}
+            <a href="/tsv/{{path}}/{{file.name}}">tsv</a>
+            <a href="/download/{{path}}/{{file.name}}">Download</a>
+            {% endif %}
+          </td>
+          <td>{{file.human_time}}</td>
+          <td>{{file.time}}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <script>
+    $(document).ready( function () {
+      $('#fileTable').DataTable( {
+        // paging: false,
+        columnDefs: [
+          {
+            target: 1,
+            visible: false,
+            searchable: false
+          },
+          {
+            target: 2,
+            orderData:[1,2]
+          },
+          {
+            target: 6,
+            visible: false,
+            searchable: false
+          },
+          {
+            target: 5,
+            orderData:[6,5]
+          },
+        ],
+
+        order: [[2, 'desc']],
+        stateSave: true,
+        scrollCollapse: true,
+        lengthMenu: [
+          [25, 100,  -1],
+          [25, 100, 'All']
+        ],
+        //scrollY: '80vh'
+
+      });
+    });
+
+    </script>
+  </body>
+</html>
