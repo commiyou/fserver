@@ -26,48 +26,38 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@3.3.7/dist/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
   </head>
   <body>
-    <div class="form-group">
-      <label for="key">Choose req key:</label>
-      <select id="key" class="form-control">
-        <option value="">--Choose key--</option>
-        {% for column in columns %}
-        <option value="{{column}}">{{ column }}</option>
-        {% endfor %}
-      </select>
+    <div class="container">
+      <div class="row">
+        <label class="col-sm-2 text-left" for="key">Choose req key:</label>
+        <select class="col-sm-2" id="key" >
+          <option value="__NO_KEY__">--Choose key--</option>
+          {% for column in columns %}
+          <option value="{{column}}">{{ column }}</option>
+          {% endfor %}
+        </select>
 
-      <div class="input-group">
-        <div class="input-group-prepend">
-          <a id="prev-value" href=""  class="btn btn-outline-secondary" > </a>
-        </div>
-        <label for="input-value" id="label-value"></label>
-        <div class="input-group-append">
-          <a id="next-value" href="" class="btn btn-outline-secondary"> </a>
-        </div>
-        <input class="form-control" list="value" id="input-value"> </input>
+        <a class="col-sm-2" id="prev-value" href="" > </a>
+        <label class="col-sm-2" for="input-value" id="label-value"></label>
+        <a class="col-sm-2" id="next-value" href="" > </a>
+        <input list="value" id="input-value"> </input>
+
+        <datalist id="value">
+        </datalist>
       </div>
 
-      <datalist id="value">
-      </datalist>
-    </div>
+      <div class="row">
+        <label class="col-sm-2" for="length">Choose req length:</label>
+        <select class="col-sm-2" id="length" >
+          <option value="1000" selected="true" >1k</option>
+          <option value="5000">5k</option>
+          <option value="10000"> 1w </option>
+        </select>
+        <a class="col-sm-2" id="previous" href=""> << </a>
+        <span  class="col-sm-2" id="start">{{start}}</span>
+        <a class="col-sm-2" id="next" href=""> >> </a>
+        <input type="text" id="input-start" value="{{start}}">
 
-    <div class="form-group">
-      <label for="length">Choose req length:</label>
-      <select id="length" class="form-control">
-        <option value="1000" selected="true" >1k</option>
-        <option value="5000">5k</option>
-        <option value="10000"> 1w </option>
-      </select>
-      <div class="input-group">
-        <div class="input-group-prepend">
-          <a id="previous" href=""> << </a>
-        </div>
-        <span id="start">{{start}}</span>
-        <div class="input-group-append">
-          <a id="next" href=""> >> </a>
-        </div>
       </div>
-      <input class="form-control" type="text" id="input-start" value="{{start}}">
-
     </div>
     <table id="tsvTable" class="display compact hover">
       <thead>
@@ -153,6 +143,11 @@
 
       $('#key').on('change', function() {
         key = $(this).val();
+        if (key == "__NO_KEY__") {
+          update_value_labels(key);
+          table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length).load();
+          return;
+        }
 
         $.getJSON("/api/tsv/key/{{path}}?key=" + key, function(data) {
           $('#value').empty();
@@ -173,7 +168,12 @@
       });
 
       function update_value_labels(value) {
-        if (!value) return;
+        if (value == "__NO_KEY__") {
+          $("#label-value").text("")
+          $('#prev-value').text("");
+          $('#next-value').text("");
+          return;
+        }
         $("#label-value").text(value)
         var selectedOption = $("#value option[value='" + value + "']");
         console.log("select option=" + value);
@@ -185,21 +185,28 @@
           $('#prev-value').attr("value", prevOption.val());
           $('#prev-value').show();
         } else {
-          $('#prev-value').hide();
+          $('#prev-value').text("");
+          //$('#prev-value').disable();
         }
         if (nextOption.length > 0) {
           $('#next-value').text(nextOption.val() + " >>");
           $('#next-value').attr("value", nextOption.val());
           $('#next-value').show();
         } else {
-          $('#next-value').hide();
+          //$('#next-value').hide();
+          $('#next-value').text("");
+          //$('#next-value').disable();
         }
       }
 
       $('#input-value').on('change', function(e) {
         value = $(this).val();
-        if (!value) return;
         update_value_labels(value);
+        console.log("input " + value)
+        if (value == "__NO_KEY__") {
+          table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length).load();
+          return;
+        }
 
         console.log("req key=" + key + "&value=" + value)
         table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length + "&key=" + key + "&value=" + value).load();

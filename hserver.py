@@ -8,7 +8,8 @@ import pandas as pd
 from cachetools import TTLCache, cached
 from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.templating import Jinja2Templates
-from starlette.responses import FileResponse, HTMLResponse, JSONResponse
+from starlette.responses import (FileResponse, HTMLResponse, JSONResponse,
+                                 RedirectResponse)
 
 cache = TTLCache(maxsize=30, ttl=3600 * 48)  # 缓存最多10个文件，每个文件缓存48h
 
@@ -21,7 +22,9 @@ templates = Jinja2Templates(directory="templates")
 async def list_files(request: Request, file_path: str):
     path = Path(file_path)
     if path.is_file():
-        return {"filename": path.name}
+        url = app.url_path_for("tsv", file_path=file_path)
+        response = RedirectResponse(url=url)
+        return response
     else:
         files = [
             {
@@ -68,7 +71,7 @@ def read_file(file_path: str):
         return None
 
 
-@app.get("/tsv/{file_path:path}")
+@app.get("/tsv/{file_path:path}", name="tsv")
 async def read_tsv(
     request: Request,
     file_path: str,
@@ -159,14 +162,6 @@ async def api_tsv(
     else:
         filtered_df = df
 
-    # # 获取排序参数
-    # order_column = request.query_params.get("order[0][column]", "0")
-    # order_dir = request.query_params.get("order[0][dir]", "asc")
-    # filtered_df.sort_values(
-    #     by=filtered_df.columns[int(order_column)],
-    #     ascending=(order_dir == "asc"),
-    #     inplace=True,
-    # )
     print(
         len(filtered_df),
         start,
