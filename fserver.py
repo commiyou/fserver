@@ -7,8 +7,9 @@ from typing import Optional
 import human_readable
 import pandas as pd
 from cachetools import TTLCache, cached
-from fastapi import FastAPI, File, Request, UploadFile, status
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile, status
 from fastapi.templating import Jinja2Templates
+from pandas import ExcelWriter
 from starlette.responses import (FileResponse, HTMLResponse, JSONResponse,
                                  RedirectResponse)
 
@@ -71,6 +72,31 @@ async def upload_file(file_path: str, file: UploadFile = File(...)):
     url = app.url_path_for("list", file_path=file_path)
     response = RedirectResponse(url=url, status_code=status.HTTP_303_SEE_OTHER)
     return response
+
+
+@app.get("/excel/{file_path:path}")
+async def download_excel(file_path: str):
+    """download file as excel"""
+    path = Path(file_path)
+
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    if path.suffix in [".xls", ".xlsx"]:
+        return FileResponse(path)
+
+    df = read_file(file_path)
+    if df is None:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    try:
+        excel_path = path.with_suffix(".xlsx")
+        excel_file_name = path.stem + ".xlsx"
+        with ExcelWriter(excel_path) as writer:
+            df.to_excel(writer)
+        return FileResponse(excel_path, filename=excel_file_name)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/download/{file_path:path}")
