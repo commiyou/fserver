@@ -21,7 +21,7 @@
       width: auto;
     }
     </style>
-    <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
     <script src="https://cdn.datatables.net/2.0.3/js/dataTables.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@3.3.7/dist/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
   </head>
@@ -30,7 +30,7 @@
       <div class="row">
         <label class="col-sm-2 text-left" for="key">Choose req key:</label>
         <select class="col-sm-2" id="key" >
-          <option value="__NO_KEY__">--Choose key--</option>
+          <option value="">--Choose key--</option>
           {% for column in columns %}
           <option value="{{column}}">{{ column }}</option>
           {% endfor %}
@@ -46,14 +46,15 @@
       </div>
 
       <div class="row">
-        <label class="col-sm-2" for="length">Choose req length:</label>
+        <label class="col-sm-2" for="length">Choose req length(total {{recordsTotal}}):</label>
         <select class="col-sm-2" id="length" >
           <option value="1000" selected="true" >1k</option>
           <option value="5000">5k</option>
           <option value="10000"> 1w </option>
+          <option value="-1"> all </option>
         </select>
         <a class="col-sm-2" id="previous" href=""> << </a>
-        <span  class="col-sm-2" id="start">{{start}}</span>
+        <span  class="col-sm-2" id="start">{{start}}</span> 
         <a class="col-sm-2" id="next" href=""> >> </a>
         <input type="text" id="input-start" value="{{start}}">
 
@@ -93,13 +94,16 @@
           [20, 100,  -1],
           [20, 100, 'All']
         ],
+        search: {
+        return: true
+        }
       });
 
       $('#previous').on('click', function(e) {
         e.preventDefault();
         var start = parseInt($('#start').text());
         var length = parseInt($('#length').val());
-        if (start > 0) {
+        if (start > 0 && length >=0) {
 
           key = $("#key").val();
           //value = $("#value").val();
@@ -107,7 +111,7 @@
           if (start < 0) start = 0;
           $('#start').text(start);  
           $('#input-start').val(start);  // 更新输入框的pageno
-          table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + key + "&value=" + value).load();
+          table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value)).load();
         }
       });
 
@@ -115,18 +119,19 @@
         e.preventDefault();
         var start = parseInt($('#start').text());
         var length = parseInt($('#length').val());
+        if (length <=0) return;
         key = $("#key").val();
         start += length;
         $('#start').text(start);  // 更新页面上的start
         $('#input-start').val(start);  // 更新输入框的start
-        //table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + key + "&value=" + value).load();
-        table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + key + "&value=" + value).load();
+        //table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value)).load();
+        table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value)).load();
       });
 
       $('#length').on('change', function() {
         key = $("#key").val();
         length = parseInt($(this).val());
-        table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + key + "&value=" + value).load();
+        table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value)).load();
       });
 
       // 当用户在输入框中输入start并按回车时，更新start并重新加载表格
@@ -135,7 +140,7 @@
           start = parseInt($(this).val());
           if (start < 0)  start = 0;
           $('#start').text(start);  // 更新页面上的start
-          table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + key + "&value=" + value).load();
+          table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value)).load();
           return false;  // 阻止表单的默认提交行为
         }
       });
@@ -143,7 +148,7 @@
 
       $('#key').on('change', function() {
         key = $(this).val();
-        if (key == "__NO_KEY__") {
+        if (!key) {
           update_value_labels(key);
           table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length).load();
           return;
@@ -156,19 +161,20 @@
               value: item,
               text: item 
             }));
+            console.log("add key=" + item + "&i=" +i )
           });
           value = $("#value :first-child").text();
           if (value) {
             //$("#label-value").text(first_value);
             update_value_labels(value);
-            table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length + "&key=" + key + "&value=" + value).load();
+            table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length + "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value)).load();
           }
         });
 
       });
 
       function update_value_labels(value) {
-        if (value == "__NO_KEY__") {
+        if (!value) {
           $("#label-value").text("")
           $('#prev-value').text("");
           $('#next-value').text("");
@@ -203,22 +209,23 @@
         value = $(this).val();
         update_value_labels(value);
         console.log("input " + value)
-        if (value == "__NO_KEY__") {
+        if (!value) {
           table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length).load();
           return;
         }
 
-        console.log("req key=" + key + "&value=" + value)
-        table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length + "&key=" + key + "&value=" + value).load();
+        console.log("req key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value))
+        table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length + "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value)).load();
         $(this).val("");
       });
 
       $('#prev-value, #next-value').on('click', function(e) {
         e.preventDefault();
+        //if (parseInt($("#length").text()) <= 0) return;
         value = $(this).attr('value')
         update_value_labels(value);
         //table.ajax.url($(this).attr('href')).load();
-        table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length + "&key=" + key + "&value=" + value).load();
+        table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length + "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value)).load();
       });
 
     });
