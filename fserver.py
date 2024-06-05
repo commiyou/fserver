@@ -34,7 +34,7 @@ def get_directory_contents(directory):
                 "human_time": human_readable.date_time(datetime.datetime.fromtimestamp(item.stat().st_mtime)),
             }
             contents.append(item_info)
-    contents.sort(lambda x: x["time"], reverse=True)
+    # contents.sort(lambda x: x["time"], reverse=True)
     return contents
 
 
@@ -84,6 +84,10 @@ async def download_excel(file_path: str):
 
     if path.suffix in [".xls", ".xlsx"]:
         return FileResponse(path)
+    k = (file_path,)
+    if k in cache:
+        del cache[k]
+    df = read_file(file_path)
 
     df = read_file(file_path)
     if df is None:
@@ -132,9 +136,10 @@ async def read_tsv(
     if not path.is_file():
         return {"error": f"File not found: {file_path}"}
 
-    print(f"reload {reload}, incache {file_path in cache}, {file_path}, {cache}")
-    if reload and (file_path,) in cache:
-        del cache[(file_path,)]
+    k = (file_path,)
+    print(f"reload {reload}, incache {k in cache}, {file_path}")
+    if reload and k in cache:
+        del cache[k]
     df = read_file(file_path)
     if df is None:
         return {"error": "File not found."}
@@ -180,7 +185,7 @@ async def api_tsv(
     request: Request,
     file_path: str,
     start: Optional[int] = 0,
-    length: Optional[int] = 1000,
+    length: Optional[int] = 500,
     reload: Optional[bool] = False,
     key: Optional[str] = None,
     value: Optional[str] = None,
@@ -199,10 +204,14 @@ async def api_tsv(
     if df is None:
         return {"error": "File not found."}
 
-    if value is not None and value.isdigit():
-        value = int(value)
     if key and value is not None:
-        df = df[df[key] == value]
+        tmp = df[df[key] == value]
+
+        if len(tmp) == 0 and value is not None and value.isdigit():
+            value = int(value)
+            df = df[df[key] == value]
+        else:
+            df = tmp
 
     # 获取搜索参数
     search_value = request.query_params.get("search[value]", "")
