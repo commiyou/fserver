@@ -6,12 +6,11 @@ from typing import Optional
 
 import human_readable
 import pandas as pd
-from cachetools import TTLCache, cached
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile, status
+from cachetools import TTLCache
+from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile, status
 from fastapi.templating import Jinja2Templates
 from pandas import ExcelWriter
-from starlette.responses import (FileResponse, HTMLResponse, JSONResponse,
-                                 RedirectResponse)
+from starlette.responses import FileResponse, JSONResponse, RedirectResponse
 
 cache = TTLCache(maxsize=30, ttl=3600 * 48)  # 缓存最多10个文件，每个文件缓存48h
 
@@ -20,7 +19,7 @@ app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
 
-def get_directory_contents(directory):
+def get_directory_contents(directory: Path) -> list[dict]:
     """return dir content"""
     contents = []
     for item in os.scandir(directory):
@@ -31,7 +30,7 @@ def get_directory_contents(directory):
                 "time": item.stat().st_mtime,
                 "type": "file" if item.is_file() else "dir",
                 "human_size": human_readable.file_size(item.stat().st_size, gnu=True),
-                "human_time": human_readable.date_time(datetime.datetime.fromtimestamp(item.stat().st_mtime)),
+                "human_time": human_readable.date_time(datetime.datetime.fromtimestamp(item.stat().st_mtime)),  # noqa: DTZ006
             }
             contents.append(item_info)
     # contents.sort(lambda x: x["time"], reverse=True)
@@ -39,27 +38,28 @@ def get_directory_contents(directory):
 
 
 @app.get("/list/{file_path:path}", name="list")
-async def list_files(request: Request, file_path: str):
+async def list_files(request: Request, file_path: Path) -> Response:
     """list files in `file_path`"""
     path = Path(file_path)
     if path.is_file():
         url = app.url_path_for("tsv", file_path=file_path)
         response = RedirectResponse(url=url)
         return response
-    else:
-        files = get_directory_contents(file_path)
-        breadcrumbs = [{"name": part, "url": "/" + "/".join(path.parts[: i + 1])} for i, part in enumerate(path.parts)]
+    files = get_directory_contents(file_path)
+    breadcrumbs = [{"name": part, "url": "/" + "/".join(path.parts[: i + 1])} for i, part in enumerate(path.parts)]
 
-        return templates.TemplateResponse(
-            "list.html", {"request": request, "files": files, "path": file_path, "breadcrumbs": breadcrumbs}
-        )
+    return templates.TemplateResponse(
+        "list.html",
+        {"request": request, "files": files, "path": file_path, "breadcrumbs": breadcrumbs},
+    )
 
 
 @app.post("/upload/{file_path:path}")
-async def upload_file(file_path: str, file: UploadFile = File(...)):
+async def upload_file(file_path: str, file: UploadFile = File(...)):  # noqa: ANN201
     """upload file to `file_path`"""
     if not file:
-        return {"error", "no file upload"}
+        return {"error": "no file upload"}
+    assert file.filename is not None
     path = Path(file_path) / file.filename
     i = 1
     while path.exists():
@@ -75,7 +75,7 @@ async def upload_file(file_path: str, file: UploadFile = File(...)):
 
 
 @app.get("/excel/{file_path:path}")
-async def download_excel(file_path: str):
+async def download_excel(file_path: str):  # noqa: ANN201
     """download file as excel"""
     path = Path(file_path)
 
@@ -87,42 +87,49 @@ async def download_excel(file_path: str):
     k = (file_path,)
     if k in cache:
         del cache[k]
-    df = read_file(file_path)
+    df = read_file(file_path)  # noqa: PD901
 
-    df = read_file(file_path)
     if df is None:
         raise HTTPException(status_code=404, detail="File not found")
 
     try:
-        excel_path = path.with_suffix(".xlsx")
+        if path.suffix in [".tsv", ".csv", ".data", "txt"]:
+            excel_path = path.with_suffix(".xlsx")
+        else:
+            excel_path = Path(str(path) + ".xlsx")
+
         excel_file_name = path.stem + ".xlsx"
         with ExcelWriter(excel_path) as writer:
             df.to_excel(writer)
         return FileResponse(excel_path, filename=excel_file_name)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(e)) from None
 
 
 @app.get("/download/{file_path:path}")
-async def download_file(file_path: str):
+async def download_file(file_path: str) -> Response:
     """download file"""
     return FileResponse(file_path)
 
 
-@cached(cache)
-def read_file(file_path: str):
+def read_file(file_path: str, names_list: tuple[str, ...] | None = None):  # noqa: ANN201
+    """以file name为key load&cache文件"""
+    k = (file_path,)
+    if k in cache:
+        return cache[k]
     path = Path(file_path)
     if path.is_file():
-        df = pd.read_csv(path, sep="\t")
-        # fix DataTables warning: table id=tsvTable - Requested unknown parameter '优化后的sug-test_299100_10w_10w.gsb.price' for row 0, column 3.
-        df.columns = map(lambda x: x.replace(".", "-"), df.columns)
+        df = pd.read_csv(path, sep="\t", names=list(names_list) if names_list else None)
+        # fix DataTables warning:
+        # table Requested unknown parameter '优化后的sug-test_299100_10w_10w.gsb.price' for row 0, column 3.
+        df.columns = [str(x).replace(".", "-") for x in df.columns]
+        cache[k] = df
         return df
-    else:
-        return None
+    return None
 
 
 @app.get("/tsv/{file_path:path}", name="tsv")
-async def read_tsv(
+async def read_tsv(  # noqa: ANN201
     request: Request,
     file_path: str,
     start: Optional[int] = 0,
@@ -130,6 +137,7 @@ async def read_tsv(
     reload: Optional[bool] = False,
     key: Optional[str] = None,
     value: Optional[str] = None,
+    names: Optional[str] = None,
 ):
     """show tabluar page of tsv file using pandas display"""
     path = Path(file_path)
@@ -140,7 +148,11 @@ async def read_tsv(
     print(f"reload {reload}, incache {k in cache}, {file_path}")
     if reload and k in cache:
         del cache[k]
-    df = read_file(file_path)
+    names_list = None
+    if names:
+        names_list = tuple(names.split(","))
+
+    df = read_file(file_path, names_list)  # noqa: PD901
     if df is None:
         return {"error": "File not found."}
     columns = df.columns.tolist()
@@ -160,7 +172,7 @@ async def read_tsv(
 
 
 @app.get("/api/tsv/key/{file_path:path}")
-async def api_tsv_key(
+async def api_tsv_key(  # noqa: ANN201
     request: Request,
     file_path: str,
     key: str,
@@ -175,6 +187,7 @@ async def api_tsv_key(
         del cache[(file_path,)]
 
     df = read_file(file_path)
+    assert df is not None
     keys = df[key].dropna().unique().tolist()
 
     return JSONResponse(keys)
@@ -199,19 +212,28 @@ async def api_tsv(
     if reload and (file_path,) in cache:
         del cache[(file_path,)]
 
-    df = read_file(file_path)
+    df = read_file(file_path)  # noqa: PD901
 
     if df is None:
         return {"error": "File not found."}
 
+    # print("columns", df.columns, "key", key, f"value:{type(value)}", value, "@@")
     if key and value is not None:
-        tmp = df[df[key] == value]
+        column_dtype = df[key].dtypes
+        print("Column data type:", column_dtype)
 
-        if len(tmp) == 0 and value is not None and value.isdigit():
-            value = int(value)
-            df = df[df[key] == value]
+        # Convert the object `s` to the column's data type
+        if column_dtype == "int64":
+            converted_value = int(value)
+        elif column_dtype == "float64":
+            converted_value = float(value)
+        elif column_dtype == "bool":
+            converted_value = bool(value)
+        elif column_dtype == "datetime64[ns]":
+            converted_value = pd.to_datetime(value)
         else:
-            df = tmp
+            converted_value = str(value)
+        df = df[df[key] == converted_value]
 
     # 获取搜索参数
     search_value = request.query_params.get("search[value]", "")
@@ -235,5 +257,5 @@ async def api_tsv(
             "recordsTotal": len(df),
             "recordsFiltered": len(filtered_df),
             "draw": draw,
-        }
+        },
     )
