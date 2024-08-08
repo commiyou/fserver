@@ -30,7 +30,9 @@ def get_directory_contents(directory: Path) -> list[dict]:
                 "time": item.stat().st_mtime,
                 "type": "file" if item.is_file() else "dir",
                 "human_size": human_readable.file_size(item.stat().st_size, gnu=True),
-                "human_time": human_readable.date_time(datetime.datetime.fromtimestamp(item.stat().st_mtime)),  # noqa: DTZ006
+                "human_time": human_readable.date_time(
+                    datetime.datetime.fromtimestamp(item.stat().st_mtime)
+                ),  # noqa: DTZ006
             }
             contents.append(item_info)
     # contents.sort(lambda x: x["time"], reverse=True)
@@ -46,11 +48,19 @@ async def list_files(request: Request, file_path: Path) -> Response:
         response = RedirectResponse(url=url)
         return response
     files = get_directory_contents(file_path)
-    breadcrumbs = [{"name": part, "url": "/" + "/".join(path.parts[: i + 1])} for i, part in enumerate(path.parts)]
+    breadcrumbs = [
+        {"name": part, "url": "/" + "/".join(path.parts[: i + 1])}
+        for i, part in enumerate(path.parts)
+    ]
 
     return templates.TemplateResponse(
         "list.html",
-        {"request": request, "files": files, "path": file_path, "breadcrumbs": breadcrumbs},
+        {
+            "request": request,
+            "files": files,
+            "path": file_path,
+            "breadcrumbs": breadcrumbs,
+        },
     )
 
 
@@ -75,7 +85,10 @@ async def upload_file(file_path: str, file: UploadFile = File(...)):  # noqa: AN
 
 
 @app.get("/excel/{file_path:path}")
-async def download_excel(file_path: str):  # noqa: ANN201
+async def download_excel(
+    file_path: str,
+    names: Optional[str] = None,
+):  # noqa: ANN201
     """download file as excel"""
     path = Path(file_path)
 
@@ -87,7 +100,10 @@ async def download_excel(file_path: str):  # noqa: ANN201
     k = (file_path,)
     if k in cache:
         del cache[k]
-    df = read_file(file_path)  # noqa: PD901
+    names_list = None
+    if names:
+        names_list = tuple(names.split(","))
+    df = read_file(file_path, names_list)  # noqa: PD901
 
     if df is None:
         raise HTTPException(status_code=404, detail="File not found")
@@ -98,9 +114,9 @@ async def download_excel(file_path: str):  # noqa: ANN201
         else:
             excel_path = Path(str(path) + ".xlsx")
 
-        excel_file_name = path.stem + ".xlsx"
+        excel_file_name = excel_path.stem + ".xlsx"
         with ExcelWriter(excel_path) as writer:
-            df.to_excel(writer)
+            df.to_excel(writer, index=False)
         return FileResponse(excel_path, filename=excel_file_name)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(e)) from None
@@ -112,17 +128,30 @@ async def download_file(file_path: str) -> Response:
     return FileResponse(file_path)
 
 
-def read_file(file_path: str, names_list: tuple[str, ...] | None = None):  # noqa: ANN201
+def read_file(
+    file_path: str,
+    names_list: tuple[str, ...] | None = None,
+    *,
+    header: bool = True,
+):  # noqa: ANN201
     """以file name为key load&cache文件"""
     k = (file_path,)
     if k in cache:
         return cache[k]
     path = Path(file_path)
+    print(header)
     if path.is_file():
-        df = pd.read_csv(path, sep="\t", names=list(names_list) if names_list else None)
+        if path.suffix == ".xlsx":
+            df = pd.read_excel(path)
+        elif names_list:
+            df = pd.read_csv(path, sep="\t", names=list(names_list))
+            df.columns = [str(x).replace(".", "-") for x in df.columns]
+        elif header:
+            df = pd.read_csv(path, sep="\t")
+        else:
+            df = pd.read_csv(path, sep="\t", header=None)
         # fix DataTables warning:
         # table Requested unknown parameter '优化后的sug-test_299100_10w_10w.gsb.price' for row 0, column 3.
-        df.columns = [str(x).replace(".", "-") for x in df.columns]
         cache[k] = df
         return df
     return None
@@ -138,6 +167,7 @@ async def read_tsv(  # noqa: ANN201
     key: Optional[str] = None,
     value: Optional[str] = None,
     names: Optional[str] = None,
+    header: Optional[bool] = True,
 ):
     """show tabluar page of tsv file using pandas display"""
     path = Path(file_path)
@@ -152,7 +182,7 @@ async def read_tsv(  # noqa: ANN201
     if names:
         names_list = tuple(names.split(","))
 
-    df = read_file(file_path, names_list)  # noqa: PD901
+    df = read_file(file_path, names_list, header=header)  # noqa: PD901
     if df is None:
         return {"error": "File not found."}
     columns = df.columns.tolist()
@@ -238,7 +268,11 @@ async def api_tsv(
     # 获取搜索参数
     search_value = request.query_params.get("search[value]", "")
     if search_value:
-        filtered_df = df[df.apply(lambda row: row.astype(str).str.contains(search_value).any(), axis=1)]
+        filtered_df = df[
+            df.apply(
+                lambda row: row.astype(str).str.contains(search_value).any(), axis=1
+            )
+        ]
     else:
         filtered_df = df
 
@@ -251,7 +285,11 @@ async def api_tsv(
 
     return JSONResponse(
         {
-            "data": (filtered_df[start : start + length] if length > 0 else filtered_df[start:])
+            "data": (
+                filtered_df[start : start + length]
+                if length > 0
+                else filtered_df[start:]
+            )
             .fillna("")
             .to_dict(orient="records"),
             "recordsTotal": len(df),
