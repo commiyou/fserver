@@ -86,8 +86,7 @@ async def upload_file(file_path: str, file: UploadFile = File(...)):  # noqa: AN
 
 @app.get("/excel/{file_path:path}")
 async def download_excel(
-    file_path: str,
-    names: Optional[str] = None,
+    file_path: str, names: Optional[str] = None, header: Optional[bool] = True
 ):  # noqa: ANN201
     """download file as excel"""
     path = Path(file_path)
@@ -103,7 +102,7 @@ async def download_excel(
     names_list = None
     if names:
         names_list = tuple(names.split(","))
-    df = read_file(file_path, names_list)  # noqa: PD901
+    df = read_file(file_path, names_list, header=header)  # noqa: PD901
 
     if df is None:
         raise HTTPException(status_code=404, detail="File not found")
