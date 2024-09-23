@@ -30,9 +30,7 @@ def get_directory_contents(directory: Path) -> list[dict]:
                 "time": item.stat().st_mtime,
                 "type": "file" if item.is_file() else "dir",
                 "human_size": human_readable.file_size(item.stat().st_size, gnu=True),
-                "human_time": human_readable.date_time(
-                    datetime.datetime.fromtimestamp(item.stat().st_mtime)
-                ),  # noqa: DTZ006
+                "human_time": human_readable.date_time(datetime.datetime.fromtimestamp(item.stat().st_mtime)),  # noqa: DTZ006
             }
             contents.append(item_info)
     # contents.sort(lambda x: x["time"], reverse=True)
@@ -48,10 +46,7 @@ async def list_files(request: Request, file_path: Path) -> Response:
         response = RedirectResponse(url=url)
         return response
     files = get_directory_contents(file_path)
-    breadcrumbs = [
-        {"name": part, "url": "/" + "/".join(path.parts[: i + 1])}
-        for i, part in enumerate(path.parts)
-    ]
+    breadcrumbs = [{"name": part, "url": "/" + "/".join(path.parts[: i + 1])} for i, part in enumerate(path.parts)]
 
     return templates.TemplateResponse(
         "list.html",
@@ -85,9 +80,7 @@ async def upload_file(file_path: str, file: UploadFile = File(...)):  # noqa: AN
 
 
 @app.get("/excel/{file_path:path}")
-async def download_excel(
-    file_path: str, names: Optional[str] = None, header: Optional[bool] = True
-):  # noqa: ANN201
+async def download_excel(file_path: str, names: Optional[str] = None, header: Optional[bool] = True):  # noqa: ANN201
     """download file as excel"""
     path = Path(file_path)
 
@@ -149,6 +142,7 @@ def read_file(
             df = pd.read_csv(path, sep="\t")
         else:
             df = pd.read_csv(path, sep="\t", header=None)
+            df.columns = [f"col{i + 1}" for i in range(df.shape[1])]
         # fix DataTables warning:
         # table Requested unknown parameter '优化后的sug-test_299100_10w_10w.gsb.price' for row 0, column 3.
         cache[k] = df
@@ -217,7 +211,7 @@ async def api_tsv_key(  # noqa: ANN201
 
     df = read_file(file_path)
     assert df is not None
-    keys = df[key].dropna().unique().tolist()
+    keys = df[str(key)].dropna().unique().tolist()
 
     return JSONResponse(keys)
 
@@ -267,11 +261,7 @@ async def api_tsv(
     # 获取搜索参数
     search_value = request.query_params.get("search[value]", "")
     if search_value:
-        filtered_df = df[
-            df.apply(
-                lambda row: row.astype(str).str.contains(search_value).any(), axis=1
-            )
-        ]
+        filtered_df = df[df.apply(lambda row: row.astype(str).str.contains(search_value).any(), axis=1)]
     else:
         filtered_df = df
 
@@ -284,11 +274,7 @@ async def api_tsv(
 
     return JSONResponse(
         {
-            "data": (
-                filtered_df[start : start + length]
-                if length > 0
-                else filtered_df[start:]
-            )
+            "data": (filtered_df[start : start + length] if length > 0 else filtered_df[start:])
             .fillna("")
             .to_dict(orient="records"),
             "recordsTotal": len(df),
