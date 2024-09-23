@@ -117,6 +117,9 @@ async def download_excel(file_path: str, names: Optional[str] = None, header: Op
 @app.get("/download/{file_path:path}")
 async def download_file(file_path: str) -> Response:
     """download file"""
+    file_path = file_path.strip()
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
     return FileResponse(file_path)
 
 
@@ -282,3 +285,11 @@ async def api_tsv(
             "draw": draw,
         },
     )
+
+
+if __name__ == "__main__":
+    import uvicorn
+    from uvicorn.config import LOGGING_CONFIG
+
+    LOGGING_CONFIG["formatters"]["access"]["fmt"] = "%(asctime)s " + LOGGING_CONFIG["formatters"]["access"]["fmt"]
+    uvicorn.run("fserver:app", host="0.0.0.0", port=8113, reload=True)
