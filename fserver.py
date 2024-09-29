@@ -1,6 +1,8 @@
 import datetime
+import json
 import os
 import shutil
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -87,14 +89,14 @@ async def download_excel(file_path: str, names: Optional[str] = None, header: Op
     if not path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
 
-    if path.suffix in [".xls", ".xlsx"]:
+    if path.suffix in {".xls", ".xlsx"}:
         return FileResponse(path)
     k = (file_path,)
     if k in cache:
         del cache[k]
     names_list = None
     if names:
-        names_list = tuple(names.split(","))
+        names_list = [int(x) for x in names.split(",")]
     df = read_file(file_path, names_list, header=header)  # noqa: PD901
 
     if df is None:
@@ -123,11 +125,19 @@ async def download_file(file_path: str) -> Response:
     return FileResponse(file_path)
 
 
+def try_load_pretty_print_json(x):
+    try:
+        return f"<pre>{json.dumps(json.loads(x), ensure_ascii=False, indent=4)}</pre>"
+    except Exception:
+        return x
+
+
 def read_file(
     file_path: str,
     names_list: tuple[str, ...] | None = None,
     *,
     header: bool = True,
+    json_cols: list[int] | None = None,
 ):  # noqa: ANN201
     """以file name为key load&cache文件"""
     k = (file_path,)
@@ -145,7 +155,14 @@ def read_file(
             df = pd.read_csv(path, sep="\t")
         else:
             df = pd.read_csv(path, sep="\t", header=None)
-            df.columns = [f"col{i + 1}" for i in range(df.shape[1])]
+            df.columns = [f"col{i}" for i in range(df.shape[1])]
+
+        # Adding the additional functionality requested
+        if json_cols is not None:
+            for col in json_cols:
+                # print("@@@", col, df.iloc[:, int(col)], file=sys.stderr)
+                df.iloc[:, col] = df.iloc[:, col].apply(try_load_pretty_print_json)
+
         # fix DataTables warning:
         # table Requested unknown parameter '优化后的sug-test_299100_10w_10w.gsb.price' for row 0, column 3.
         cache[k] = df
@@ -164,6 +181,7 @@ async def read_tsv(  # noqa: ANN201
     value: Optional[str] = None,
     names: Optional[str] = None,
     header: Optional[bool] = True,
+    json_cols: Optional[str] = None,
 ):
     """show tabluar page of tsv file using pandas display"""
     path = Path(file_path)
@@ -177,8 +195,9 @@ async def read_tsv(  # noqa: ANN201
     names_list = None
     if names:
         names_list = tuple(names.split(","))
+    json_col_list = [int(x) for x in json_cols.split(",")] if json_cols else []
 
-    df = read_file(file_path, names_list, header=header)  # noqa: PD901
+    df = read_file(file_path, names_list, header=header, json_cols=json_col_list)  # noqa: PD901
     if df is None:
         return {"error": "File not found."}
     columns = df.columns.tolist()

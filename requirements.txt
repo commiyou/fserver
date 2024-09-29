@@ -1,4 +1,5 @@
 cachetools
+openpyxl
 fastapi
 human-readable
 starlette
