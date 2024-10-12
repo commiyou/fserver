@@ -6,4 +6,4 @@ starlette
 uvicorn
 python-multipart
 pandas
-jinja
+jinja2
