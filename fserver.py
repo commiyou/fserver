@@ -96,7 +96,7 @@ async def download_excel(file_path: str, names: Optional[str] = None, header: Op
         del cache[k]
     names_list = None
     if names:
-        names_list = [int(x) for x in names.split(",")]
+        names_list = [str(x) for x in names.split(",")]
     df = read_file(file_path, names_list, header=header)  # noqa: PD901
 
     if df is None:
@@ -128,7 +128,8 @@ async def download_file(file_path: str) -> Response:
 def try_load_pretty_print_json(x):
     try:
         return f"<pre>{json.dumps(json.loads(x), ensure_ascii=False, indent=4)}</pre>"
-    except Exception:
+    except Exception as e:
+        print("load json fail", e, x, sep="\n", file=sys.stderr)
         return x
 
 
