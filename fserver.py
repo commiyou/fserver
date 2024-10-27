@@ -146,6 +146,8 @@ def read_file(
         return cache[k]
     path = Path(file_path)
     print(header)
+    if path.stat().st_size == 0:
+        return None
     if path.is_file():
         if path.suffix == ".xlsx":
             df = pd.read_excel(path)
@@ -159,6 +161,7 @@ def read_file(
             df.columns = [f"col{i}" for i in range(df.shape[1])]
 
         # Adding the additional functionality requested
+        print("@@@@", json_cols)
         if json_cols is not None:
             for col in json_cols:
                 # print("@@@", col, df.iloc[:, int(col)], file=sys.stderr)
@@ -200,7 +203,7 @@ async def read_tsv(  # noqa: ANN201
 
     df = read_file(file_path, names_list, header=header, json_cols=json_col_list)  # noqa: PD901
     if df is None:
-        return {"error": "File not found."}
+        return {"error": "File not found or empty."}
     columns = df.columns.tolist()
     name = path.name
     return templates.TemplateResponse(
