@@ -32,7 +32,9 @@ def get_directory_contents(directory: Path) -> list[dict]:
                 "time": item.stat().st_mtime,
                 "type": "file" if item.is_file() else "dir",
                 "human_size": human_readable.file_size(item.stat().st_size, gnu=True),
-                "human_time": human_readable.date_time(datetime.datetime.fromtimestamp(item.stat().st_mtime)),  # noqa: DTZ006
+                "human_time": human_readable.date_time(
+                    datetime.datetime.fromtimestamp(item.stat().st_mtime)
+                ),  # noqa: DTZ006
             }
             contents.append(item_info)
     # contents.sort(lambda x: x["time"], reverse=True)
@@ -48,7 +50,10 @@ async def list_files(request: Request, file_path: Path) -> Response:
         response = RedirectResponse(url=url)
         return response
     files = get_directory_contents(file_path)
-    breadcrumbs = [{"name": part, "url": "/" + "/".join(path.parts[: i + 1])} for i, part in enumerate(path.parts)]
+    breadcrumbs = [
+        {"name": part, "url": "/" + "/".join(path.parts[: i + 1])}
+        for i, part in enumerate(path.parts)
+    ]
 
     return templates.TemplateResponse(
         "list.html",
@@ -82,7 +87,12 @@ async def upload_file(file_path: str, file: UploadFile = File(...)):  # noqa: AN
 
 
 @app.get("/excel/{file_path:path}")
-async def download_excel(file_path: str, names: Optional[str] = None, header: Optional[bool] = True):  # noqa: ANN201
+async def download_excel(
+    file_path: str,
+    names: Optional[str] = None,
+    header: Optional[bool] = True,
+    json_cols: Optional[str] = None,
+):  # noqa: ANN201
     """download file as excel"""
     path = Path(file_path)
 
@@ -97,7 +107,8 @@ async def download_excel(file_path: str, names: Optional[str] = None, header: Op
     names_list = None
     if names:
         names_list = [str(x) for x in names.split(",")]
-    df = read_file(file_path, names_list, header=header)  # noqa: PD901
+    json_col_list = [int(x) for x in json_cols.split(",")] if json_cols else []
+    df = read_file(file_path, names_list, header=header, json_cols=json_col_list)  # noqa: PD901
 
     if df is None:
         raise HTTPException(status_code=404, detail="File not found")
@@ -287,7 +298,11 @@ async def api_tsv(
     # 获取搜索参数
     search_value = request.query_params.get("search[value]", "")
     if search_value:
-        filtered_df = df[df.apply(lambda row: row.astype(str).str.contains(search_value).any(), axis=1)]
+        filtered_df = df[
+            df.apply(
+                lambda row: row.astype(str).str.contains(search_value).any(), axis=1
+            )
+        ]
     else:
         filtered_df = df
 
@@ -300,7 +315,11 @@ async def api_tsv(
 
     return JSONResponse(
         {
-            "data": (filtered_df[start : start + length] if length > 0 else filtered_df[start:])
+            "data": (
+                filtered_df[start : start + length]
+                if length > 0
+                else filtered_df[start:]
+            )
             .fillna("")
             .to_dict(orient="records"),
             "recordsTotal": len(df),
@@ -314,5 +333,7 @@ if __name__ == "__main__":
     import uvicorn
     from uvicorn.config import LOGGING_CONFIG
 
-    LOGGING_CONFIG["formatters"]["access"]["fmt"] = "%(asctime)s " + LOGGING_CONFIG["formatters"]["access"]["fmt"]
+    LOGGING_CONFIG["formatters"]["access"]["fmt"] = (
+        "%(asctime)s " + LOGGING_CONFIG["formatters"]["access"]["fmt"]
+    )
     uvicorn.run("fserver:app", host="0.0.0.0", port=8113, reload=True)
