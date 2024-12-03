@@ -4,14 +4,15 @@ import os
 import shutil
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
+import aiofiles
 import human_readable
 import pandas as pd
 from cachetools import TTLCache
 from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile, status
 from fastapi.templating import Jinja2Templates
-from pandas import ExcelWriter
+from pandas import DataFrame, ExcelWriter
 from starlette.responses import FileResponse, JSONResponse, RedirectResponse
 
 cache = TTLCache(maxsize=30, ttl=3600 * 48)  # 缓存最多10个文件，每个文件缓存48h
@@ -21,7 +22,7 @@ app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
 
-def get_directory_contents(directory: Path) -> list[dict]:
+def get_directory_contents(directory: Path | str) -> list[dict[str, Any]]:
     """return dir content"""
     contents = []
     for item in os.scandir(directory):
@@ -32,9 +33,7 @@ def get_directory_contents(directory: Path) -> list[dict]:
                 "time": item.stat().st_mtime,
                 "type": "file" if item.is_file() else "dir",
                 "human_size": human_readable.file_size(item.stat().st_size, gnu=True),
-                "human_time": human_readable.date_time(
-                    datetime.datetime.fromtimestamp(item.stat().st_mtime)
-                ),  # noqa: DTZ006
+                "human_time": human_readable.date_time(datetime.datetime.fromtimestamp(item.stat().st_mtime)),  # noqa: DTZ006
             }
             contents.append(item_info)
     # contents.sort(lambda x: x["time"], reverse=True)
@@ -50,10 +49,7 @@ async def list_files(request: Request, file_path: Path) -> Response:
         response = RedirectResponse(url=url)
         return response
     files = get_directory_contents(file_path)
-    breadcrumbs = [
-        {"name": part, "url": "/" + "/".join(path.parts[: i + 1])}
-        for i, part in enumerate(path.parts)
-    ]
+    breadcrumbs = [{"name": part, "url": "/" + "/".join(path.parts[: i + 1])} for i, part in enumerate(path.parts)]
 
     return templates.TemplateResponse(
         "list.html",
@@ -67,10 +63,10 @@ async def list_files(request: Request, file_path: Path) -> Response:
 
 
 @app.post("/upload/{file_path:path}")
-async def upload_file(file_path: str, file: UploadFile = File(...)):  # noqa: ANN201
+async def upload_file(file_path: str, file: UploadFile = File(...)) -> RedirectResponse:  # noqa: B008
     """upload file to `file_path`"""
     if not file:
-        return {"error": "no file upload"}
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No file uploaded.")
     assert file.filename is not None
     path = Path(file_path) / file.filename
     i = 1
@@ -78,8 +74,11 @@ async def upload_file(file_path: str, file: UploadFile = File(...)):  # noqa: AN
         path = Path(file_path) / f"{file.filename}.new{i}"
         i += 1
 
-    with path.open("wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    # with path.open("wb") as buffer:
+    #     shutil.copyfileobj(file.file, buffer)
+    async with aiofiles.open(path, "wb") as buffer:
+        content = await file.read()
+        await buffer.write(content)
 
     url = app.url_path_for("list", file_path=file_path)
     response = RedirectResponse(url=url, status_code=status.HTTP_303_SEE_OTHER)
@@ -133,10 +132,13 @@ async def download_file(file_path: str) -> Response:
     file_path = file_path.strip()
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
+    if os.path.is_dir(file_path):
+        raise HTTPException(status_code=400, detail=f"Path is a directory: {file_path}.")
     return FileResponse(file_path)
 
 
-def try_load_pretty_print_json(x):
+def try_load_pretty_print_json(x: str) -> str:
+    """json转为markdown"""
     try:
         return f"<pre>{json.dumps(json.loads(x), ensure_ascii=False, indent=4)}</pre>"
     except Exception as e:
@@ -150,7 +152,7 @@ def read_file(
     *,
     header: bool = True,
     json_cols: list[int] | None = None,
-):  # noqa: ANN201
+) -> DataFrame | None:
     """以file name为key load&cache文件"""
     k = (file_path,)
     if k in cache:
@@ -162,6 +164,8 @@ def read_file(
     if path.is_file():
         if path.suffix == ".xlsx":
             df = pd.read_excel(path)
+        if path.suffix in {".json", ".ndjson"}:
+            df = pd.read_json(path, lines=True)
         elif names_list:
             df = pd.read_csv(path, sep="\t", names=list(names_list))
             df.columns = [str(x).replace(".", "-") for x in df.columns]
@@ -186,7 +190,7 @@ def read_file(
 
 
 @app.get("/tsv/{file_path:path}", name="tsv")
-async def read_tsv(  # noqa: ANN201
+async def read_tsv(  # noqa: ANN201, PLR0917
     request: Request,
     file_path: str,
     start: Optional[int] = 0,
@@ -298,11 +302,7 @@ async def api_tsv(
     # 获取搜索参数
     search_value = request.query_params.get("search[value]", "")
     if search_value:
-        filtered_df = df[
-            df.apply(
-                lambda row: row.astype(str).str.contains(search_value).any(), axis=1
-            )
-        ]
+        filtered_df = df[df.apply(lambda row: row.astype(str).str.contains(search_value).any(), axis=1)]
     else:
         filtered_df = df
 
@@ -315,11 +315,7 @@ async def api_tsv(
 
     return JSONResponse(
         {
-            "data": (
-                filtered_df[start : start + length]
-                if length > 0
-                else filtered_df[start:]
-            )
+            "data": (filtered_df[start : start + length] if length > 0 else filtered_df[start:])
             .fillna("")
             .to_dict(orient="records"),
             "recordsTotal": len(df),
@@ -333,7 +329,5 @@ if __name__ == "__main__":
     import uvicorn
     from uvicorn.config import LOGGING_CONFIG
 
-    LOGGING_CONFIG["formatters"]["access"]["fmt"] = (
-        "%(asctime)s " + LOGGING_CONFIG["formatters"]["access"]["fmt"]
-    )
+    LOGGING_CONFIG["formatters"]["access"]["fmt"] = "%(asctime)s " + LOGGING_CONFIG["formatters"]["access"]["fmt"]
     uvicorn.run("fserver:app", host="0.0.0.0", port=8113, reload=True)

@@ -8,6 +8,9 @@ pip3 install -r ./requirements.txt
 ```
 
 ## RUN
+
+http://127.0.0.1:8113/docs
+
 ```shell
 uvicorn fserver:app --reload --host 0.0.0.0 --port 8113
 ```
