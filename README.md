@@ -9,7 +9,9 @@ pip3 install -r ./requirements.txt
 
 ## RUN
 
-http://127.0.0.1:8113/docs
+api doc:
+- http://127.0.0.1:8113/docs
+- http://127.0.0.1:8113/redoc
 
 ```shell
 uvicorn fserver:app --reload --host 0.0.0.0 --port 8113

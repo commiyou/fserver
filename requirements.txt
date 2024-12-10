@@ -1,6 +1,6 @@
 cachetools
 openpyxl
-fastapi
+fastapi[standard]
 human-readable
 starlette
 uvicorn

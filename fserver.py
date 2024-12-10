@@ -2,15 +2,16 @@ import datetime
 import json
 import os
 import shutil
+import sqlite3
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Annotated, Any, Optional
 
 import aiofiles
 import human_readable
 import pandas as pd
 from cachetools import TTLCache
-from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile, status
+from fastapi import FastAPI, File, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.templating import Jinja2Templates
 from pandas import DataFrame, ExcelWriter
 from starlette.responses import FileResponse, JSONResponse, RedirectResponse
@@ -36,7 +37,6 @@ def get_directory_contents(directory: Path | str) -> list[dict[str, Any]]:
                 "human_time": human_readable.date_time(datetime.datetime.fromtimestamp(item.stat().st_mtime)),  # noqa: DTZ006
             }
             contents.append(item_info)
-    # contents.sort(lambda x: x["time"], reverse=True)
     return contents
 
 
@@ -132,7 +132,7 @@ async def download_file(file_path: str) -> Response:
     file_path = file_path.strip()
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
-    if os.path.is_dir(file_path):
+    if os.path.isdir(file_path):
         raise HTTPException(status_code=400, detail=f"Path is a directory: {file_path}.")
     return FileResponse(file_path)
 
@@ -162,10 +162,11 @@ def read_file(
     if path.stat().st_size == 0:
         return None
     if path.is_file():
+        print(path.suffix, file=sys.stderr)
         if path.suffix == ".xlsx":
             df = pd.read_excel(path)
-        if path.suffix in {".json", ".ndjson"}:
-            df = pd.read_json(path, lines=True)
+        elif path.suffix in {".json", ".ndjson"}:
+            df = pd.read_json(path, dtype=str, lines=True)
         elif names_list:
             df = pd.read_csv(path, sep="\t", names=list(names_list))
             df.columns = [str(x).replace(".", "-") for x in df.columns]
@@ -323,6 +324,91 @@ async def api_tsv(
             "draw": draw,
         },
     )
+
+
+def get_db_connection(db_path: str):
+    if not os.path.exists(db_path):
+        raise HTTPException(status_code=404, detail=f"Database path '{db_path}' does not exist.")
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row  # 以字典形式返回行
+        return conn
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/db/{db_path:path}")
+def read_db(
+    db_path: Path,
+    table: Optional[str] = Query(None, description="Name of the table to query."),
+    col: Optional[str] = Query(None, description="Column name for filtering."),
+    value: Optional[str] = Query(None, description="Value for filtering."),
+    limit: int = Query(10, ge=1, description="Limit the number of returned records."),
+):
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    if table:
+        # 查询指定表的数据
+        # try:
+        #     cursor.execute(f"SELECT * FROM {table}")
+        #     rows = cursor.fetchmany(size=10)
+        #     # 获取列名
+        #     columns = rows[0].keys() if rows else []
+        #     data = [dict(row) for row in rows]
+        #     return {"table": table, "columns": columns, "data": data}
+        # except sqlite3.Error as e:
+        #     raise HTTPException(status_code=400, detail=f"Error querying table '{table}': {str(e)}")
+        # finally:
+        #     conn.close()
+        # 验证表名是否存在，防止 SQL 注入
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?;", (table,))
+        if not cursor.fetchone():
+            conn.close()
+            raise HTTPException(status_code=400, detail=f"Table '{table}' does not exist in the database.")
+
+        # 构建查询语句
+        base_query = f"SELECT * FROM {table}"
+        parameters = []
+
+        if col and value:
+            # 验证列名是否存在
+            cursor.execute(f"PRAGMA table_info({table});")
+            columns = [row["name"] for row in cursor.fetchall()]
+            if col not in columns:
+                conn.close()
+                raise HTTPException(status_code=400, detail=f"Column '{col}' does not exist in table '{table}'.")
+            base_query += f" WHERE {col} = ?"
+            parameters.append(value)
+
+        base_query += " LIMIT ?"
+        parameters.append(limit)
+
+        try:
+            cursor.execute(base_query, parameters)
+            rows = cursor.fetchall()
+            # 获取列名
+            columns = rows[0].keys() if rows else []
+            data = [dict(row) for row in rows]
+            return {"table": table, "columns": columns, "data": data}
+        except sqlite3.Error as e:
+            raise HTTPException(status_code=400, detail=f"Error querying table '{table}': {str(e)}")
+        finally:
+            conn.close()
+    else:
+        # 获取数据库中所有表及其模式
+        try:
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+            tables = [row["name"] for row in cursor.fetchall()]
+            db_info = {}
+            for tbl in tables:
+                cursor.execute(f"PRAGMA table_info({tbl});")
+                columns = [dict(col) for col in cursor.fetchall()]
+                db_info[tbl] = columns
+            return {"tables": db_info}
+        except sqlite3.Error as e:
+            raise HTTPException(status_code=500, detail=str(e))
+        finally:
+            conn.close()
 
 
 if __name__ == "__main__":
