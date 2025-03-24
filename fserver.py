@@ -21,6 +21,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import PlainTextResponse
 from fastapi.templating import Jinja2Templates
 from pandas import DataFrame, ExcelWriter
 from starlette.responses import FileResponse, JSONResponse, RedirectResponse
@@ -43,9 +44,7 @@ def get_directory_contents(directory: Path | str) -> list[dict[str, Any]]:
                 "time": item.stat().st_mtime,
                 "type": "file" if item.is_file() else "dir",
                 "human_size": human_readable.file_size(item.stat().st_size, gnu=True),
-                "human_time": human_readable.date_time(
-                    datetime.datetime.fromtimestamp(item.stat().st_mtime)
-                ),  # noqa: DTZ006
+                "human_time": human_readable.date_time(datetime.datetime.fromtimestamp(item.stat().st_mtime)),  # noqa: DTZ006
             }
             contents.append(item_info)
     return contents
@@ -60,10 +59,7 @@ async def list_files(request: Request, file_path: Path) -> Response:
         response = RedirectResponse(url=url)
         return response
     files = get_directory_contents(file_path)
-    breadcrumbs = [
-        {"name": part, "url": "/" + "/".join(path.parts[: i + 1])}
-        for i, part in enumerate(path.parts)
-    ]
+    breadcrumbs = [{"name": part, "url": "/" + "/".join(path.parts[: i + 1])} for i, part in enumerate(path.parts)]
 
     return templates.TemplateResponse(
         "list.html",
@@ -80,9 +76,7 @@ async def list_files(request: Request, file_path: Path) -> Response:
 async def upload_file(file_path: str, file: UploadFile = File(...)) -> RedirectResponse:  # noqa: B008
     """upload file to `file_path`"""
     if not file:
-        return HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="No file uploaded."
-        )
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No file uploaded.")
     assert file.filename is not None
     path = Path(file_path) / file.filename
     i = 1
@@ -107,7 +101,7 @@ async def download_excel(
     names: Optional[str] = None,
     header: Optional[bool] = True,
     json_cols: Optional[str] = None,
-):  # noqa: ANN201
+):
     """download file as excel"""
     path = Path(file_path)
 
@@ -123,7 +117,7 @@ async def download_excel(
     if names:
         names_list = [str(x) for x in names.split(",")]
     json_col_list = [int(x) for x in json_cols.split(",")] if json_cols else []
-    df = read_file(file_path, names_list, header=header, json_cols=json_col_list)  # noqa: PD901
+    df = read_file(file_path, names_list, header=header, json_cols=json_col_list)
 
     if df is None:
         raise HTTPException(status_code=404, detail="File not found")
@@ -138,7 +132,7 @@ async def download_excel(
         with ExcelWriter(excel_path) as writer:
             df.to_excel(writer, index=False)
         return FileResponse(excel_path, filename=excel_file_name)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from None
 
 
@@ -149,9 +143,7 @@ async def download_file(file_path: str) -> Response:
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
     if os.path.isdir(file_path):
-        raise HTTPException(
-            status_code=400, detail=f"Path is a directory: {file_path}."
-        )
+        raise HTTPException(status_code=400, detail=f"Path is a directory: {file_path}.")
     return FileResponse(file_path)
 
 
@@ -209,7 +201,7 @@ def read_file(
 
 
 @app.get("/tsv/{file_path:path}", name="tsv")
-async def read_tsv(  # noqa: ANN201, PLR0917
+async def read_tsv(  # noqa: PLR0917
     request: Request,
     file_path: str,
     start: Optional[int] = 0,
@@ -235,7 +227,7 @@ async def read_tsv(  # noqa: ANN201, PLR0917
         names_list = tuple(names.split(","))
     json_col_list = [int(x) for x in json_cols.split(",")] if json_cols else []
 
-    df = read_file(file_path, names_list, header=header, json_cols=json_col_list)  # noqa: PD901
+    df = read_file(file_path, names_list, header=header, json_cols=json_col_list)
     if df is None:
         return {"error": "File not found or empty."}
     columns = df.columns.tolist()
@@ -254,8 +246,29 @@ async def read_tsv(  # noqa: ANN201, PLR0917
     )
 
 
+@app.get("/txt/{file_path:path}")
+async def get_txt_content(file_path: str) -> PlainTextResponse:
+    """
+    返回指定路径的txt文件内容作为纯文本。
+
+    - **file_path**: 文件的相对路径，可以包含子目录。
+    """
+    path = Path(file_path)
+
+    # 检查文件是否存在且为txt文件
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="TXT文件未找到")
+
+    try:
+        async with aiofiles.open(path, encoding="utf-8") as f:
+            content = await f.read()
+        return PlainTextResponse(content)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"读取文件失败: {e}")
+
+
 @app.get("/api/tsv/key/{file_path:path}")
-async def api_tsv_key(  # noqa: ANN201
+async def api_tsv_key(
     request: Request,
     file_path: str,
     key: str,
@@ -267,7 +280,7 @@ async def api_tsv_key(  # noqa: ANN201
         return {"error": f"File not found: {file_path}"}
 
     if reload and (file_path,) in cache:
-        del cache[(file_path,)]
+        del cache[file_path,]
 
     df = read_file(file_path)
     assert df is not None
@@ -293,9 +306,9 @@ async def api_tsv(
         return {"error": f"File not found: {file_path}"}
 
     if reload and (file_path,) in cache:
-        del cache[(file_path,)]
+        del cache[file_path,]
 
-    df = read_file(file_path)  # noqa: PD901
+    df = read_file(file_path)
 
     if df is None:
         return {"error": "File not found."}
@@ -321,11 +334,7 @@ async def api_tsv(
     # 获取搜索参数
     search_value = request.query_params.get("search[value]", "")
     if search_value:
-        filtered_df = df[
-            df.apply(
-                lambda row: row.astype(str).str.contains(search_value).any(), axis=1
-            )
-        ]
+        filtered_df = df[df.apply(lambda row: row.astype(str).str.contains(search_value).any(), axis=1)]
     else:
         filtered_df = df
 
@@ -338,11 +347,7 @@ async def api_tsv(
 
     return JSONResponse(
         {
-            "data": (
-                filtered_df[start : start + length]
-                if length > 0
-                else filtered_df[start:]
-            )
+            "data": (filtered_df[start : start + length] if length > 0 else filtered_df[start:])
             .fillna("")
             .to_dict(orient="records"),
             "recordsTotal": len(df),
@@ -354,9 +359,7 @@ async def api_tsv(
 
 def get_db_connection(db_path: str):
     if not os.path.exists(db_path):
-        raise HTTPException(
-            status_code=404, detail=f"Database path '{db_path}' does not exist."
-        )
+        raise HTTPException(status_code=404, detail=f"Database path '{db_path}' does not exist.")
     try:
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row  # 以字典形式返回行
@@ -389,9 +392,7 @@ def read_db(
         # finally:
         #     conn.close()
         # 验证表名是否存在，防止 SQL 注入
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?;", (table,)
-        )
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?;", (table,))
         if not cursor.fetchone():
             conn.close()
             raise HTTPException(
@@ -427,9 +428,7 @@ def read_db(
             data = [dict(row) for row in rows]
             return {"table": table, "columns": columns, "data": data}
         except sqlite3.Error as e:
-            raise HTTPException(
-                status_code=400, detail=f"Error querying table '{table}': {str(e)}"
-            ) from e
+            raise HTTPException(status_code=400, detail=f"Error querying table '{table}': {e!s}") from e
         finally:
             conn.close()
     else:
@@ -453,7 +452,5 @@ if __name__ == "__main__":
     import uvicorn
     from uvicorn.config import LOGGING_CONFIG
 
-    LOGGING_CONFIG["formatters"]["access"]["fmt"] = (
-        "%(asctime)s " + LOGGING_CONFIG["formatters"]["access"]["fmt"]
-    )
+    LOGGING_CONFIG["formatters"]["access"]["fmt"] = "%(asctime)s " + LOGGING_CONFIG["formatters"]["access"]["fmt"]
     uvicorn.run("fserver:app", host="0.0.0.0", port=8113, reload=True)
