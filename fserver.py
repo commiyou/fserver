@@ -11,7 +11,16 @@ import aiofiles
 import human_readable
 import pandas as pd
 from cachetools import TTLCache
-from fastapi import FastAPI, File, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi import (
+    FastAPI,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from fastapi.templating import Jinja2Templates
 from pandas import DataFrame, ExcelWriter
 from starlette.responses import FileResponse, JSONResponse, RedirectResponse
@@ -34,7 +43,9 @@ def get_directory_contents(directory: Path | str) -> list[dict[str, Any]]:
                 "time": item.stat().st_mtime,
                 "type": "file" if item.is_file() else "dir",
                 "human_size": human_readable.file_size(item.stat().st_size, gnu=True),
-                "human_time": human_readable.date_time(datetime.datetime.fromtimestamp(item.stat().st_mtime)),  # noqa: DTZ006
+                "human_time": human_readable.date_time(
+                    datetime.datetime.fromtimestamp(item.stat().st_mtime)
+                ),  # noqa: DTZ006
             }
             contents.append(item_info)
     return contents
@@ -49,7 +60,10 @@ async def list_files(request: Request, file_path: Path) -> Response:
         response = RedirectResponse(url=url)
         return response
     files = get_directory_contents(file_path)
-    breadcrumbs = [{"name": part, "url": "/" + "/".join(path.parts[: i + 1])} for i, part in enumerate(path.parts)]
+    breadcrumbs = [
+        {"name": part, "url": "/" + "/".join(path.parts[: i + 1])}
+        for i, part in enumerate(path.parts)
+    ]
 
     return templates.TemplateResponse(
         "list.html",
@@ -66,7 +80,9 @@ async def list_files(request: Request, file_path: Path) -> Response:
 async def upload_file(file_path: str, file: UploadFile = File(...)) -> RedirectResponse:  # noqa: B008
     """upload file to `file_path`"""
     if not file:
-        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No file uploaded.")
+        return HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="No file uploaded."
+        )
     assert file.filename is not None
     path = Path(file_path) / file.filename
     i = 1
@@ -133,7 +149,9 @@ async def download_file(file_path: str) -> Response:
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
     if os.path.isdir(file_path):
-        raise HTTPException(status_code=400, detail=f"Path is a directory: {file_path}.")
+        raise HTTPException(
+            status_code=400, detail=f"Path is a directory: {file_path}."
+        )
     return FileResponse(file_path)
 
 
@@ -303,7 +321,11 @@ async def api_tsv(
     # 获取搜索参数
     search_value = request.query_params.get("search[value]", "")
     if search_value:
-        filtered_df = df[df.apply(lambda row: row.astype(str).str.contains(search_value).any(), axis=1)]
+        filtered_df = df[
+            df.apply(
+                lambda row: row.astype(str).str.contains(search_value).any(), axis=1
+            )
+        ]
     else:
         filtered_df = df
 
@@ -316,7 +338,11 @@ async def api_tsv(
 
     return JSONResponse(
         {
-            "data": (filtered_df[start : start + length] if length > 0 else filtered_df[start:])
+            "data": (
+                filtered_df[start : start + length]
+                if length > 0
+                else filtered_df[start:]
+            )
             .fillna("")
             .to_dict(orient="records"),
             "recordsTotal": len(df),
@@ -328,13 +354,15 @@ async def api_tsv(
 
 def get_db_connection(db_path: str):
     if not os.path.exists(db_path):
-        raise HTTPException(status_code=404, detail=f"Database path '{db_path}' does not exist.")
+        raise HTTPException(
+            status_code=404, detail=f"Database path '{db_path}' does not exist."
+        )
     try:
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row  # 以字典形式返回行
         return conn
     except sqlite3.Error as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @app.get("/db/{db_path:path}")
@@ -361,10 +389,15 @@ def read_db(
         # finally:
         #     conn.close()
         # 验证表名是否存在，防止 SQL 注入
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?;", (table,))
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?;", (table,)
+        )
         if not cursor.fetchone():
             conn.close()
-            raise HTTPException(status_code=400, detail=f"Table '{table}' does not exist in the database.")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Table '{table}' does not exist in the database.",
+            )
 
         # 构建查询语句
         base_query = f"SELECT * FROM {table}"
@@ -376,7 +409,10 @@ def read_db(
             columns = [row["name"] for row in cursor.fetchall()]
             if col not in columns:
                 conn.close()
-                raise HTTPException(status_code=400, detail=f"Column '{col}' does not exist in table '{table}'.")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Column '{col}' does not exist in table '{table}'.",
+                )
             base_query += f" WHERE {col} = ?"
             parameters.append(value)
 
@@ -391,7 +427,9 @@ def read_db(
             data = [dict(row) for row in rows]
             return {"table": table, "columns": columns, "data": data}
         except sqlite3.Error as e:
-            raise HTTPException(status_code=400, detail=f"Error querying table '{table}': {str(e)}")
+            raise HTTPException(
+                status_code=400, detail=f"Error querying table '{table}': {str(e)}"
+            ) from e
         finally:
             conn.close()
     else:
@@ -406,7 +444,7 @@ def read_db(
                 db_info[tbl] = columns
             return {"tables": db_info}
         except sqlite3.Error as e:
-            raise HTTPException(status_code=500, detail=str(e))
+            raise HTTPException(status_code=500, detail=str(e)) from e
         finally:
             conn.close()
 
@@ -415,5 +453,7 @@ if __name__ == "__main__":
     import uvicorn
     from uvicorn.config import LOGGING_CONFIG
 
-    LOGGING_CONFIG["formatters"]["access"]["fmt"] = "%(asctime)s " + LOGGING_CONFIG["formatters"]["access"]["fmt"]
+    LOGGING_CONFIG["formatters"]["access"]["fmt"] = (
+        "%(asctime)s " + LOGGING_CONFIG["formatters"]["access"]["fmt"]
+    )
     uvicorn.run("fserver:app", host="0.0.0.0", port=8113, reload=True)
