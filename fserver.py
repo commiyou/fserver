@@ -162,6 +162,7 @@ def read_file(
     *,
     header: bool = True,
     json_cols: list[int] | None = None,
+    raw_json_cols: list[int] | None = None,
 ) -> DataFrame | None:
     """以file name为key load&cache文件"""
     k = (file_path,)
@@ -186,12 +187,7 @@ def read_file(
             df = pd.read_csv(path, sep="\t", header=None)
             df.columns = [f"col{i}" for i in range(df.shape[1])]
 
-        # Adding the additional functionality requested
-        print("@@@@", json_cols)
-        if json_cols is not None:
-            for col in json_cols:
-                # print("@@@", col, df.iloc[:, int(col)], file=sys.stderr)
-                df.iloc[:, col] = df.iloc[:, col].apply(try_load_pretty_print_json)
+        # Apply pretty printing to json_cols, unless they are also in raw_json_cols
 
         # fix DataTables warning:
         # table Requested unknown parameter '优化后的sug-test_299100_10w_10w.gsb.price' for row 0, column 3.
@@ -211,6 +207,7 @@ async def read_tsv(  # noqa: PLR0917
     value: Optional[str] = None,
     names: Optional[str] = None,
     header: Optional[bool] = True,
+    json_link_cols: Optional[str] = None,
     json_cols: Optional[str] = None,
 ):
     """show tabluar page of tsv file using pandas display"""
@@ -225,9 +222,12 @@ async def read_tsv(  # noqa: PLR0917
     names_list = None
     if names:
         names_list = tuple(names.split(","))
+    json_link_col_list = [int(x) for x in json_link_cols.split(",")] if json_link_cols else []
     json_col_list = [int(x) for x in json_cols.split(",")] if json_cols else []
 
-    df = read_file(file_path, names_list, header=header, json_cols=json_col_list)
+    # Pass json_col_list as json_cols to apply pretty-printing
+    # Pass json_link_col_list as raw_json_cols to prevent pretty-printing for clickable columns
+    df = read_file(file_path, names_list, header=header, json_cols=json_col_list, raw_json_cols=json_link_col_list)
     if df is None:
         return {"error": "File not found or empty."}
     columns = df.columns.tolist()
@@ -242,6 +242,8 @@ async def read_tsv(  # noqa: PLR0917
             "length": length,
             "start": start,
             "recordsTotal": len(df),
+            "json_link_cols": json_link_col_list,  # Pass json_link_cols to the template
+            "json_cols": json_col_list,  # Pass json_cols to the template
         },
     )
 
@@ -299,8 +301,10 @@ async def api_tsv(
     key: Optional[str] = None,
     value: Optional[str] = None,
     draw: Optional[int] = -1,
+    json_link_cols: Optional[str] = None,
+    json_cols: Optional[str] = None,
 ):
-    """tsv html get content of tsv file"""
+    """return table data as json for datatables ajax call"""
     path = Path(file_path)
     if not path.is_file():
         return {"error": f"File not found: {file_path}"}
@@ -308,7 +312,12 @@ async def api_tsv(
     if reload and (file_path,) in cache:
         del cache[file_path,]
 
-    df = read_file(file_path)
+    json_link_col_list = [int(x) for x in json_link_cols.split(",")] if json_link_cols else []
+    json_col_list = [int(x) for x in json_cols.split(",")] if json_cols else []
+
+    # Pass json_col_list as json_cols to apply pretty-printing
+    # Pass json_link_col_list as raw_json_cols to prevent pretty-printing for clickable columns
+    df = read_file(file_path, json_cols=json_col_list, raw_json_cols=json_link_col_list)
 
     if df is None:
         return {"error": "File not found."}
@@ -355,6 +364,36 @@ async def api_tsv(
             "draw": draw,
         },
     )
+
+
+@app.get("/api/tsv/cell/{file_path:path}")
+async def get_tsv_cell_content(
+    file_path: str,
+    row_index: int,
+    col_index: int,
+    names: Optional[str] = None,
+    header: Optional[bool] = True,
+) -> JSONResponse:
+    """Retrieve raw content of a specific cell in a TSV file."""
+    path = Path(file_path)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="File not found.")
+
+    names_list = tuple(names.split(",")) if names else None
+
+    # Read the file with no json_cols processed to get raw content
+    df = read_file(file_path, names_list, header=header, json_cols=None)  # Ensure raw content
+
+    if df is None:
+        raise HTTPException(status_code=404, detail="File not found or empty.")
+
+    try:
+        cell_value = df.iloc[row_index, col_index]
+        return JSONResponse({"content": str(cell_value)})
+    except IndexError:
+        raise HTTPException(status_code=400, detail="Row or column index out of bounds.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving cell content: {e}")
 
 
 def get_db_connection(db_path: str):
@@ -446,6 +485,30 @@ def read_db(
             raise HTTPException(status_code=500, detail=str(e)) from e
         finally:
             conn.close()
+
+
+@app.get("/json_viewer")
+async def json_viewer(content: str = Query(..., description="JSON content to display")):
+    """Displays JSON content in a readable format."""
+    try:
+        parsed_json = json.loads(content)
+        pretty_json = json.dumps(parsed_json, indent=4, ensure_ascii=False)
+        html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>JSON Viewer</title>
+    <style>
+        body {{ background-color: #f0f0f0; margin: 20px; }}
+        pre {{ background-color: #ffffff; padding: 15px; border-radius: 5px; overflow-x: auto; }}
+    </style>
+</head>
+<body>
+    <pre><code>{pretty_json}</code></pre>
+</body>
+</html>"""
+        return Response(content=html_content, media_type="text/html")
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON content")
 
 
 if __name__ == "__main__":

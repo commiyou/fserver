@@ -9,8 +9,9 @@
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@3.3.7/dist/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
 
-    <link rel="stylesheet" href="https://cdn.datatables.net/2.0.3/css/dataTables.dataTables.css" />
-    <link rel="stylesheet" href="https://cdn.datatables.net/fixedheader/4.0.1/css/fixedHeader.dataTables.css" />
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.10.25/css/jquery.dataTables.css" />
+    <link rel="stylesheet" href="https://cdn.datatables.net/fixedheader/3.1.9/css/fixedHeader.dataTables.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-colresize-unofficial@latest/jquery.dataTables.colResize.css" />
     <style>
     body {
       padding: 20px;
@@ -25,11 +26,45 @@
     table.dataTable td {
       vertical-align: top;
     }
+    table.dataTable td,
+    table.dataTable th {
+      -webkit-box-sizing: content-box;
+      -moz-box-sizing: content-box;
+      box-sizing: content-box;
+      max-height: 200px; /* Adjust as needed */
+      overflow: auto;
+    }
+    .json-cell {
+      cursor: pointer;
+      /* color: #337ab7; */ /* Bootstrap's link color */
+      /* text-decoration: underline; */
+      font-style: italic;
+    }
+    .json-display-cell {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    
+    .json-string {
+      color: green;
+    }
+    .json-number {
+      color: darkorange;
+    }
+    .json-boolean {
+      color: blue;
+    }
+    .json-null {
+      color: magenta;
+    }
+    #tsvTable {
+      /* table-layout: fixed; */
+    }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
-    <script src="https://cdn.datatables.net/2.0.3/js/dataTables.js"></script>
-    <script src="https://cdn.datatables.net/fixedheader/4.0.1/js/dataTables.fixedHeader.js" />
-    <script src="https://cdn.datatables.net/fixedheader/4.0.1/js/fixedHeader.dataTables.js" />
+    <script src="https://cdn.datatables.net/1.10.25/js/jquery.dataTables.js"></script>
+    <script src="https://cdn.datatables.net/fixedheader/3.1.9/js/dataTables.fixedHeader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/datatables.net-colresize-unofficial@latest/jquery.dataTables.colResize.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@3.3.7/dist/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
   </head>
   <body>
@@ -68,6 +103,7 @@
 
       </div>
     </div>
+    <div style="overflow-x: auto;">
     <table id="tsvTable" class="display compact hover">
       <thead>
         <tr>
@@ -80,35 +116,97 @@
       <tbody>
       </tbody>
     </table>
+    </div>
     <script>
+    function syntaxHighlight(json) {
+      try {
+        var obj = JSON.parse(json);
+        json = JSON.stringify(obj, undefined, 2);
+      } catch (e) {
+        // Not valid JSON, return original string
+        return json;
+      }
+
+      json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+        var cls = 'number';
+        if (/^"/.test(match)) {
+          if (/:$/.test(match)) {
+            cls = 'key';
+          } else {
+            cls = 'string';
+          }
+        } else if (/true|false/.test(match)) {
+          cls = 'boolean';
+        } else if (/null/.test(match)) {
+          cls = 'null';
+        }
+        return '<span class="json-' + cls + '">' + match + '</span>';
+      });
+    }
+
     $(document).ready(function() {
       var start = parseInt($('#start').text());
       var length = parseInt($('#length').val());
+
+      // Get columns from Jinja2 as JSON string and parse it
+      var rawColumns = '{{ columns | tojson }}';
+      var jsonLinkColumnsIndices = JSON.parse('{{ json_link_cols | tojson }}');
+      var jsonDisplayColumnsIndices = JSON.parse('{{ json_cols | tojson }}');
+
+      var dataTableColumns = JSON.parse(rawColumns).map(function(columnName, index) {
+        var columnDef = { data: columnName };
+        if (jsonLinkColumnsIndices.includes(index)) {
+          columnDef.createdCell = function(td, cellData, rowData, row, col) {
+            $(td).addClass('json-cell');
+            $(td).on('click', function() {
+              var encodedContent = encodeURIComponent(cellData);
+              window.open('/json_viewer?content=' + encodedContent, '_blank');
+            });
+          };
+        } else if (jsonDisplayColumnsIndices.includes(index)) {
+          columnDef.createdCell = function(td, cellData, rowData, row, col) {
+            $(td).addClass('json-display-cell');
+            td.innerHTML = syntaxHighlight(cellData);
+          };
+        }
+        return columnDef;
+      });
+
       var table = $('#tsvTable').DataTable({
         //serverSide: true,
         // processing: true,
         fixedHeader: {
           header: true,
         },
+        colResize: {
+          resizeTable: true,
+          minColumnWidth: 10,
+        },
+        autoWidth: false,
+        scrollX: false,
         ajax: {
           url: "/api/tsv/{{path}}?start=" + start + "&length=" + length,
           dataSrc:'data'
         },
-        columns: [
-          {% for column in columns %}
-            { data: "{{ column }}" },
-          {% endfor %}
-        ],
+        columns: dataTableColumns,
         stateSave: true,
         // scrollCollapse: true,
         lengthMenu: [
           [20, 100,  -1],
           [20, 100, 'All']
         ],
-        search: {
-        return: true
-        },
         order:[]
+      });
+
+      // Listen for the column-resized.dt event from colResize
+      table.on('column-resized.dt', function(e, settings, columns) {
+        // Recalculate column widths and redraw the table
+        table.columns.adjust().draw();
+        // Update FixedHeader to synchronize cloned elements
+        if (table.fixedHeader) {
+          table.fixedHeader.update();
+        }
       });
 
       $('#previous').on('click', function(e) {
