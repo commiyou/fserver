@@ -152,8 +152,15 @@ def try_load_pretty_print_json(x: str) -> str:
     try:
         return f"<pre>{json.dumps(json.loads(x), ensure_ascii=False, indent=4)}</pre>"
     except Exception as e:
-        print("load json fail", e, x, sep="\n", file=sys.stderr)
+        print("load json fail", e, x, sep=" ", file=sys.stderr)
         return x
+
+
+def to_img_tag(x: Any) -> str:
+    """convert url to img tag"""
+    if pd.isna(x) or not isinstance(x, str) or not x.strip():
+        return ""
+    return f'<img src="{x}" height="100" />'
 
 
 def read_file(
@@ -209,6 +216,7 @@ async def read_tsv(  # noqa: PLR0917
     header: Optional[bool] = True,
     json_link_cols: Optional[str] = None,
     json_cols: Optional[str] = None,
+    image_cols: Optional[str] = None,
 ):
     """show tabluar page of tsv file using pandas display"""
     path = Path(file_path)
@@ -224,10 +232,18 @@ async def read_tsv(  # noqa: PLR0917
         names_list = tuple(names.split(","))
     json_link_col_list = [int(x) for x in json_link_cols.split(",")] if json_link_cols else []
     json_col_list = [int(x) for x in json_cols.split(",")] if json_cols else []
+    image_col_list = [int(x) for x in image_cols.split(",")] if image_cols else []
 
     # Pass json_col_list as json_cols to apply pretty-printing
     # Pass json_link_col_list as raw_json_cols to prevent pretty-printing for clickable columns
-    df = read_file(file_path, names_list, header=header, json_cols=json_col_list, raw_json_cols=json_link_col_list)
+    df = read_file(
+        file_path,
+        names_list,
+        header=header,
+        json_cols=json_col_list,
+        raw_json_cols=json_link_col_list,
+        # image_cols=image_col_list,
+    )
     if df is None:
         return {"error": "File not found or empty."}
     columns = df.columns.tolist()
@@ -244,6 +260,7 @@ async def read_tsv(  # noqa: PLR0917
             "recordsTotal": len(df),
             "json_link_cols": json_link_col_list,  # Pass json_link_cols to the template
             "json_cols": json_col_list,  # Pass json_cols to the template
+            "image_cols": image_col_list,
         },
     )
 
@@ -322,6 +339,8 @@ async def api_tsv(
     if df is None:
         return {"error": "File not found."}
 
+    records_total = len(df)
+
     # print("columns", df.columns, "key", key, f"value:{type(value)}", value, "@@")
     if key and value is not None:
         column_dtype = df[key].dtypes
@@ -338,14 +357,18 @@ async def api_tsv(
             converted_value = pd.to_datetime(value)
         else:
             converted_value = str(value)
-        df = df[df[key] == converted_value]
+        df_filtered = df[df[key] == converted_value]
+    else:
+        df_filtered = df
 
     # 获取搜索参数
     search_value = request.query_params.get("search[value]", "")
     if search_value:
-        filtered_df = df[df.apply(lambda row: row.astype(str).str.contains(search_value).any(), axis=1)]
+        filtered_df = df_filtered[
+            df_filtered.apply(lambda row: row.astype(str).str.contains(search_value).any(), axis=1)
+        ]
     else:
-        filtered_df = df
+        filtered_df = df_filtered
 
     # print(
     #         len(filtered_df),
@@ -359,7 +382,7 @@ async def api_tsv(
             "data": (filtered_df[start : start + length] if length > 0 else filtered_df[start:])
             .fillna("")
             .to_dict(orient="records"),
-            "recordsTotal": len(df),
+            "recordsTotal": records_total,
             "recordsFiltered": len(filtered_df),
             "draw": draw,
         },

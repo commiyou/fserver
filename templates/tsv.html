@@ -9,8 +9,8 @@
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@3.3.7/dist/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
 
-    <link rel="stylesheet" href="https://cdn.datatables.net/1.10.25/css/jquery.dataTables.css" />
-    <link rel="stylesheet" href="https://cdn.datatables.net/fixedheader/3.1.9/css/fixedHeader.dataTables.css" />
+    <link rel="stylesheet" href="//cdn.datatables.net/2.3.4/css/dataTables.dataTables.min.css" />
+    <link rel="stylesheet" href="https://cdn.datatables.net/fixedheader/4.0.4/css/fixedHeader.dataTables.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-colresize-unofficial@latest/jquery.dataTables.colResize.css" />
     <style>
     body {
@@ -62,8 +62,8 @@
     }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
-    <script src="https://cdn.datatables.net/1.10.25/js/jquery.dataTables.js"></script>
-    <script src="https://cdn.datatables.net/fixedheader/3.1.9/js/dataTables.fixedHeader.js"></script>
+    <script src="//cdn.datatables.net/2.3.4/js/dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/fixedheader/4.0.4/js/dataTables.fixedHeader.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/datatables.net-colresize-unofficial@latest/jquery.dataTables.colResize.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@3.3.7/dist/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
   </head>
@@ -153,6 +153,7 @@
       var rawColumns = '{{ columns | tojson }}';
       var jsonLinkColumnsIndices = JSON.parse('{{ json_link_cols | tojson }}');
       var jsonDisplayColumnsIndices = JSON.parse('{{ json_cols | tojson }}');
+      var imageColumnsIndices = JSON.parse('{{ image_cols | tojson }}');
 
       var dataTableColumns = JSON.parse(rawColumns).map(function(columnName, index) {
         var columnDef = { data: columnName };
@@ -168,6 +169,12 @@
           columnDef.createdCell = function(td, cellData, rowData, row, col) {
             $(td).addClass('json-display-cell');
             td.innerHTML = syntaxHighlight(cellData);
+          };
+        } else if (imageColumnsIndices.includes(index)) {
+          columnDef.createdCell = function(td, cellData, rowData, row, col) {
+            if (cellData) {
+              td.innerHTML = '<img src="' + cellData + '" height="100" />';
+            }
           };
         }
         return columnDef;
