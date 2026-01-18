@@ -116,8 +116,7 @@ async def download_excel(
     names_list = None
     if names:
         names_list = [str(x) for x in names.split(",")]
-    json_col_list = [int(x) for x in json_cols.split(",")] if json_cols else []
-    df = read_file(file_path, names_list, header=header, json_cols=json_col_list)
+    df = read_file(file_path, names_list, header=header)
 
     if df is None:
         raise HTTPException(status_code=404, detail="File not found")
@@ -147,15 +146,6 @@ async def download_file(file_path: str) -> Response:
     return FileResponse(file_path)
 
 
-def try_load_pretty_print_json(x: str) -> str:
-    """json转为markdown"""
-    try:
-        return f"<pre>{json.dumps(json.loads(x), ensure_ascii=False, indent=4)}</pre>"
-    except Exception as e:
-        print("load json fail", e, x, sep=" ", file=sys.stderr)
-        return x
-
-
 def to_img_tag(x: Any) -> str:
     """convert url to img tag"""
     if pd.isna(x) or not isinstance(x, str) or not x.strip():
@@ -168,8 +158,6 @@ def read_file(
     names_list: tuple[str, ...] | None = None,
     *,
     header: bool = True,
-    json_cols: list[int] | None = None,
-    raw_json_cols: list[int] | None = None,
 ) -> DataFrame | None:
     """以file name为key load&cache文件"""
     k = (file_path,)
@@ -185,22 +173,86 @@ def read_file(
             df = pd.read_excel(path)
         elif path.suffix in {".json", ".ndjson"}:
             df = pd.read_json(path, dtype=str, lines=True)
-        elif names_list:
-            df = pd.read_csv(path, sep="\t", names=list(names_list))
-            df.columns = [str(x).replace(".", "-") for x in df.columns]
-        elif header:
-            df = pd.read_csv(path, sep="\t")
         else:
-            df = pd.read_csv(path, sep="\t", header=None)
-            df.columns = [f"col{i}" for i in range(df.shape[1])]
+            try:
+                if names_list:
+                    df = pd.read_csv(path, sep="\t", names=list(names_list))
+                    df.columns = [str(x).replace(".", "-") for x in df.columns]
+                elif header:
+                    df = pd.read_csv(path, sep="\t")
+                else:
+                    df = pd.read_csv(path, sep="\t", header=None)
+                    df.columns = [f"col{i}" for i in range(df.shape[1])]
+            except pd.errors.ParserError:
+                # Fallback for ragged files (variable column counts)
+                # "Good Taste": Don't crash, handle the data structure as it is (a ragged matrix)
+                try:
+                    with path.open("r", encoding="utf-8", errors="replace") as f:
+                        lines = [line.rstrip("\n").split("\t") for line in f]
+                    
+                    if not lines:
+                        return None
+                        
+                    df = pd.DataFrame(lines)
+                    
+                    if names_list:
+                        # Best effort: Assign provided names to the first N columns
+                        # If data has more columns than names, they keep default int indices or we can rename them
+                        current_cols = list(df.columns)
+                        limit = min(len(names_list), len(current_cols))
+                        
+                        new_cols = list(names_list)[:limit] + [f"col{i}" for i in range(limit, len(current_cols))]
+                        df.columns = new_cols
+                        df.columns = [str(x).replace(".", "-") for x in df.columns]
+                        
+                    elif header:
+                        # First row is header
+                        if len(df) > 0:
+                            # Extract headers from the first row of the data (which is now in the DF)
+                            # Note: lines[0] might be shorter than max width of DF
+                            headers = lines[0]
+                            # Pad headers if the DF is wider than the first row
+                            if len(df.columns) > len(headers):
+                                headers += [f"col{i}" for i in range(len(headers), len(df.columns))]
+                            
+                            df.columns = headers
+                            # Drop the first row as it's now the header
+                            df = df.iloc[1:].reset_index(drop=True)
+                    else:
+                        # No header, just rename all columns
+                        df.columns = [f"col{i}" for i in range(df.shape[1])]
+                    
+                    # Attach a warning to the DataFrame to notify the UI
+                    df.attrs["warning_msg"] = "⚠️ 注意：检测到文件列数不规则（Ragged Data）。已启用兼容模式加载，部分列可能自动填充为空值。"
 
-        # Apply pretty printing to json_cols, unless they are also in raw_json_cols
+                except Exception as e:
+                     # If fallback also fails, then we truly fail
+                    raise HTTPException(status_code=400, detail=f"CSV/TSV Parse Error: {e}") from e
 
-        # fix DataTables warning:
-        # table Requested unknown parameter '优化后的sug-test_299100_10w_10w.gsb.price' for row 0, column 3.
         cache[k] = df
         return df
     return None
+
+
+def get_col_indices(df: DataFrame, cols: Optional[str]) -> list[int]:
+    """Resolve column names or indices to a list of 0-based integer indices."""
+    if not cols:
+        return []
+    indices = []
+    for x in cols.split(","):
+        x = x.strip()
+        if not x:
+            continue
+        try:
+            # Try as integer index
+            idx = int(x)
+            if 0 <= idx < len(df.columns):
+                indices.append(idx)
+        except ValueError:
+            # Try as column name
+            if x in df.columns:
+                indices.append(df.columns.get_loc(x))
+    return indices
 
 
 @app.get("/tsv/{file_path:path}", name="tsv")
@@ -217,6 +269,7 @@ async def read_tsv(  # noqa: PLR0917
     json_link_cols: Optional[str] = None,
     json_cols: Optional[str] = None,
     image_cols: Optional[str] = None,
+    hide_cols: Optional[str] = None,
 ):
     """show tabluar page of tsv file using pandas display"""
     path = Path(file_path)
@@ -230,29 +283,34 @@ async def read_tsv(  # noqa: PLR0917
     names_list = None
     if names:
         names_list = tuple(names.split(","))
-    json_link_col_list = [int(x) for x in json_link_cols.split(",")] if json_link_cols else []
-    json_col_list = [int(x) for x in json_cols.split(",")] if json_cols else []
-    image_col_list = [int(x) for x in image_cols.split(",")] if image_cols else []
 
-    # Pass json_col_list as json_cols to apply pretty-printing
-    # Pass json_link_col_list as raw_json_cols to prevent pretty-printing for clickable columns
     df = read_file(
         file_path,
         names_list,
         header=header,
-        json_cols=json_col_list,
-        raw_json_cols=json_link_col_list,
-        # image_cols=image_col_list,
     )
     if df is None:
         return {"error": "File not found or empty."}
+
+    # Resolve columns to indices
+    json_link_col_list = get_col_indices(df, json_link_cols)
+    json_col_list = get_col_indices(df, json_cols)
+    image_col_list = get_col_indices(df, image_cols)
+    hide_col_list = get_col_indices(df, hide_cols)
+
     columns = df.columns.tolist()
     name = path.name
+    parent_path = path.parent
+    
+    # Check if a warning was attached during parsing (e.g. fallback triggered)
+    warning_msg = getattr(df, "attrs", {}).get("warning_msg", None)
+
     return templates.TemplateResponse(
         "tsv.html",
         {
             "request": request,
             "path": file_path,
+            "parent_path": str(parent_path),
             "name": name,
             "columns": columns,
             "length": length,
@@ -261,6 +319,8 @@ async def read_tsv(  # noqa: PLR0917
             "json_link_cols": json_link_col_list,  # Pass json_link_cols to the template
             "json_cols": json_col_list,  # Pass json_cols to the template
             "image_cols": image_col_list,
+            "hide_cols": hide_col_list,
+            "warning_msg": warning_msg,
         },
     )
 
@@ -329,12 +389,9 @@ async def api_tsv(
     if reload and (file_path,) in cache:
         del cache[file_path,]
 
-    json_link_col_list = [int(x) for x in json_link_cols.split(",")] if json_link_cols else []
-    json_col_list = [int(x) for x in json_cols.split(",")] if json_cols else []
-
     # Pass json_col_list as json_cols to apply pretty-printing
     # Pass json_link_col_list as raw_json_cols to prevent pretty-printing for clickable columns
-    df = read_file(file_path, json_cols=json_col_list, raw_json_cols=json_link_col_list)
+    df = read_file(file_path)
 
     if df is None:
         return {"error": "File not found."}
@@ -405,7 +462,7 @@ async def get_tsv_cell_content(
     names_list = tuple(names.split(",")) if names else None
 
     # Read the file with no json_cols processed to get raw content
-    df = read_file(file_path, names_list, header=header, json_cols=None)  # Ensure raw content
+    df = read_file(file_path, names_list, header=header)  # Ensure raw content
 
     if df is None:
         raise HTTPException(status_code=404, detail="File not found or empty.")

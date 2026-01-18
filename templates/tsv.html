@@ -9,9 +9,10 @@
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@3.3.7/dist/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
 
-    <link rel="stylesheet" href="//cdn.datatables.net/2.3.4/css/dataTables.dataTables.min.css" />
-    <link rel="stylesheet" href="https://cdn.datatables.net/fixedheader/4.0.4/css/fixedHeader.dataTables.css" />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-colresize-unofficial@latest/jquery.dataTables.colResize.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-dt@2.0.3/css/dataTables.dataTables.min.css" />
+    <link rel="stylesheet" href="https://cdn.datatables.net/buttons/3.0.1/css/buttons.dataTables.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jquery.json-viewer@1.5.0/json-viewer/jquery.json-viewer.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dt-colresize@2.0.4/css/dataTables.colResize.min.css" />
     <style>
     body {
       padding: 20px;
@@ -31,8 +32,9 @@
       -webkit-box-sizing: content-box;
       -moz-box-sizing: content-box;
       box-sizing: content-box;
-      max-height: 200px; /* Adjust as needed */
-      overflow: auto;
+      /* max-height: 200px; */ /* Adjust as needed */
+      /* overflow: auto; */
+      white-space: nowrap;
     }
     .json-cell {
       cursor: pointer;
@@ -41,66 +43,166 @@
       font-style: italic;
     }
     .json-display-cell {
-      white-space: pre-wrap;
+      white-space: pre-wrap; /* Allow wrapping inside JSON */
       word-wrap: break-word;
+      min-width: 300px; /* Give it some space when expanded */
+      padding-left: 20px !important; /* Fix arrow overlap */
     }
     
+    .json-controls {
+        margin-bottom: 5px;
+        font-size: 0.85em;
+    }
+    .json-controls a {
+        cursor: pointer;
+        margin-right: 10px;
+        text-decoration: none;
+        color: #337ab7;
+    }
+    .json-controls a:hover {
+        text-decoration: underline;
+    }
+
+    /* JSON Viewer Tweaks */
+    ul.json-dict, ol.json-array {
+        list-style-type: none;
+        margin: 0;
+        padding-left: 10px;
+        border-left: 1px dotted #ccc;
+    }
     .json-string {
-      color: green;
+        color: #0B7500;
     }
-    .json-number {
-      color: darkorange;
+    .json-literal {
+        color: #1A01CC;
+        font-weight: bold;
     }
-    .json-boolean {
-      color: blue;
-    }
-    .json-null {
-      color: magenta;
-    }
+
     #tsvTable {
       /* table-layout: fixed; */
     }
+    .help-label {
+        border-bottom: 1px dotted #999;
+        cursor: help;
+    }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
-    <script src="//cdn.datatables.net/2.3.4/js/dataTables.min.js"></script>
-    <script src="https://cdn.datatables.net/fixedheader/4.0.4/js/dataTables.fixedHeader.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/datatables.net-colresize-unofficial@latest/jquery.dataTables.colResize.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/datatables.net@2.0.3/js/dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/3.0.1/js/dataTables.buttons.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/3.0.1/js/buttons.colVis.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jquery.json-viewer@1.5.0/json-viewer/jquery.json-viewer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dt-colresize@2.0.4/js/dataTables.colResize.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@3.3.7/dist/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
   </head>
   <body>
-    <div class="container">
-      <div class="row">
-        <label class="col-sm-2 text-left" for="key">Choose req key:</label>
-        <select class="col-sm-2" id="key" >
-          <option value="">--Choose key--</option>
-          {% for column in columns %}
-          <option value="{{column}}">{{ column }}</option>
-          {% endfor %}
-        </select>
+    <div class="container-fluid" style="padding: 15px 30px;">
+      <!-- Warning Alert -->
+      {% if warning_msg %}
+      <div class="alert alert-warning alert-dismissible" role="alert" style="margin-bottom: 15px; border-left: 5px solid #ffcc00;">
+        <button type="button" class="close" data-dismiss="alert" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+        <strong>文件格式警告:</strong> {{ warning_msg }}
+      </div>
+      {% endif %}
 
-        <a class="col-sm-2" id="prev-value" href="" > </a>
-        <label class="col-sm-2" for="input-value" id="label-value"></label>
-        <a class="col-sm-2" id="next-value" href="" > </a>
-        <input list="value" id="input-value"> </input>
-
-        <datalist id="value">
-        </datalist>
+      <!-- Page Header & Actions -->
+      <div class="page-header" style="margin-top: 0; padding-bottom: 10px; border-bottom: 1px solid #eee;">
+        <div class="row">
+            <div class="col-md-8">
+                <h3 style="margin: 0; line-height: 1.4;">
+                    <span class="glyphicon glyphicon-list-alt text-primary" style="margin-right: 10px;"></span>
+                    <span style="font-weight: 600;">{{name}}</span>
+                    <small class="text-muted" style="margin-left: 15px; font-size: 0.6em; vertical-align: middle;">
+                        <span class="glyphicon glyphicon-align-justify"></span> 文件共 {{recordsTotal}} 条，本次加载 {{ length if length > 0 else '全部' }} 条
+                    </small>
+                </h3>
+            </div>
+            <div class="col-md-4 text-right">
+                <a class="btn btn-default shadow-sm" href="/list/{{parent_path}}" style="font-weight: bold; padding: 8px 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.15); margin-right: 10px;" title="返回上一级文件夹目录">
+                    <span class="glyphicon glyphicon-folder-open"></span> 打开文件夹
+                </a>
+                <a class="btn btn-success shadow-sm" href="/excel/{{path}}?{{ request.url.query }}" target="_blank" style="font-weight: bold; padding: 8px 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.15);">
+                    <span class="glyphicon glyphicon-download-alt"></span> 导出 Excel
+                </a>
+            </div>
+        </div>
       </div>
 
-      <div class="row">
-        <label class="col-sm-2" for="length">Choose req length(total {{recordsTotal}}):</label>
-        <select class="col-sm-2" id="length" >
-          <option value="500" selected="true" >500</option>
-          <option value="1000">1k</option>
-          <option value="5000">5k</option>
-          <option value="10000"> 1w </option>
-          <option value="-1"> all </option>
-        </select>
-        <a class="col-sm-2" id="previous" href=""> << </a>
-        <span  class="col-sm-2" id="start">{{start}}</span> 
-        <a class="col-sm-2" id="next" href=""> >> </a>
-        <input type="text" id="input-start" value="{{start}}">
+      <!-- Controls Toolbar -->
+      <div class="well well-sm" style="background-color: #f8f9fa; border: 1px solid #e9ecef; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+        <div class="row">
+            
+            <!-- LEFT: Data Filter & Navigation -->
+            <div class="col-md-7">
+                <form class="form-inline">
+                    <div class="form-group">
+                        <label for="key" class="text-muted small help-label" style="text-transform: uppercase; font-weight: bold; margin-right: 5px;" title="选择一列进行精确匹配。选中后，系统将扫描全文件并列出该列所有的唯一值供选择。">筛选列</label>
+                        <select class="form-control input-sm" id="key" style="max-width: 150px;">
+                            <option value="">-- 全部 --</option>
+                            {% for column in columns %}
+                            <option value="{{column}}">{{ column }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
 
+                    <!-- Dynamic Value Controls -->
+                    <div class="form-group" style="margin-left: 15px;">
+                        <!-- Prev Value Link -->
+                        <a id="prev-value" class="btn btn-default btn-sm text-primary" href="#" style="display:none; margin-right: 5px;" title="上一个唯一值"></a>
+                        
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-addon"><i class="glyphicon glyphicon-search"></i></span>
+                            <input list="value" id="input-value" class="form-control" placeholder="输入或选择..." style="min-width: 160px;" title="在此输入或选择一个特定值，系统将只显示该列等于此值的行。支持全文件检索。">
+                        </div>
+                        <datalist id="value"></datalist>
+
+                        <!-- Next Value Link -->
+                        <a id="next-value" class="btn btn-default btn-sm text-primary" href="#" style="display:none; margin-left: 5px;" title="下一个唯一值"></a>
+                        
+                        <span id="label-value" class="text-info small" style="margin-left: 8px; font-weight: bold;"></span>
+                    </div>
+                </form>
+            </div>
+
+            <!-- RIGHT: Pagination -->
+            <div class="col-md-5 text-right">
+                <form class="form-inline">
+                    <div class="form-group">
+                        <label for="length" class="text-muted small help-label" style="margin-right: 5px;" title="限制单次请求从服务器加载的最大行数。数据量过大时建议使用较小的值以提高响应速度。">加载条数</label>
+                        <select class="form-control input-sm" id="length" style="width: 70px;">
+                            <option value="500" selected="true">500</option>
+                            <option value="1000">1k</option>
+                            <option value="5000">5k</option>
+                            <option value="10000">10k</option>
+                            <option value="-1">All</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group" style="margin-left: 10px;">
+                         <div class="btn-group btn-group-sm">
+                            <a class="btn btn-default" id="previous" href="#" title="跳转到上一组数据（跨度为上方设置的每页行数）">
+                                <i class="glyphicon glyphicon-chevron-left"></i>
+                            </a>
+                            <div class="btn btn-default disabled" style="cursor: default; background: #fff; color: #333; min-width: 80px;" title="当前数据显示的起始行索引">
+                                <span class="text-muted">起始行:</span> <span id="start" style="font-weight:bold; color: #000;">{{start}}</span>
+                            </div>
+                            <a class="btn btn-default" id="next" href="#" title="跳转到下一组数据（跨度为上方设置的每页行数）">
+                                <i class="glyphicon glyphicon-chevron-right"></i>
+                            </a>
+                         </div>
+                    </div>
+
+                     <div class="form-group" style="margin-left: 5px;">
+                        <div class="input-group input-group-sm" style="width: 100px;">
+                            <input type="number" id="input-start" value="{{start}}" class="form-control" placeholder="行号" title="直接输入想要跳转的起始行号并按回车或点击Go">
+                            <span class="input-group-btn">
+                                <button class="btn btn-default" type="button" onclick="$('#input-start').trigger($.Event('keypress', {which: 13}));">Go</button>
+                            </span>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+        </div>
       </div>
     </div>
     <div style="overflow-x: auto;">
@@ -118,34 +220,10 @@
     </table>
     </div>
     <script>
-    function syntaxHighlight(json) {
-      try {
-        var obj = JSON.parse(json);
-        json = JSON.stringify(obj, undefined, 2);
-      } catch (e) {
-        // Not valid JSON, return original string
-        return json;
-      }
-
-      json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
-        var cls = 'number';
-        if (/^"/.test(match)) {
-          if (/:$/.test(match)) {
-            cls = 'key';
-          } else {
-            cls = 'string';
-          }
-        } else if (/true|false/.test(match)) {
-          cls = 'boolean';
-        } else if (/null/.test(match)) {
-          cls = 'null';
-        }
-        return '<span class="json-' + cls + '">' + match + '</span>';
-      });
-    }
-
     $(document).ready(function() {
+      // Initialize tooltips
+      $('[title]').tooltip();
+      
       var start = parseInt($('#start').text());
       var length = parseInt($('#length').val());
 
@@ -154,9 +232,15 @@
       var jsonLinkColumnsIndices = JSON.parse('{{ json_link_cols | tojson }}');
       var jsonDisplayColumnsIndices = JSON.parse('{{ json_cols | tojson }}');
       var imageColumnsIndices = JSON.parse('{{ image_cols | tojson }}');
+      var hiddenColumnsIndices = JSON.parse('{{ hide_cols | tojson }}');
 
       var dataTableColumns = JSON.parse(rawColumns).map(function(columnName, index) {
         var columnDef = { data: columnName };
+        
+        if (hiddenColumnsIndices.includes(index)) {
+            columnDef.visible = false;
+        }
+
         if (jsonLinkColumnsIndices.includes(index)) {
           columnDef.createdCell = function(td, cellData, rowData, row, col) {
             $(td).addClass('json-cell');
@@ -168,7 +252,43 @@
         } else if (jsonDisplayColumnsIndices.includes(index)) {
           columnDef.createdCell = function(td, cellData, rowData, row, col) {
             $(td).addClass('json-display-cell');
-            td.innerHTML = syntaxHighlight(cellData);
+            try {
+                // Check if it looks like JSON before parsing
+                if (typeof cellData === 'string' && (cellData.trim().startsWith('{') || cellData.trim().startsWith('['))) {
+                    var jsonData = JSON.parse(cellData);
+                    
+                    var $container = $('<div>');
+                    var $controls = $('<div class="json-controls">');
+                    var $expandBtn = $('<a>[+] Expand</a>');
+                    var $collapseBtn = $('<a>[-] Collapse</a>');
+                    var $viewer = $('<div>');
+
+                    $expandBtn.on('click', function() {
+                        $viewer.jsonViewer(jsonData, {collapsed: false, withQuotes: true});
+                        $(this).hide();
+                        $collapseBtn.show();
+                    });
+                    
+                    $collapseBtn.on('click', function() {
+                        $viewer.jsonViewer(jsonData, {collapsed: true, withQuotes: true});
+                        $(this).hide();
+                        $expandBtn.show();
+                    });
+                    
+                    // Initial state: collapsed
+                    $collapseBtn.hide(); 
+                    $viewer.jsonViewer(jsonData, {collapsed: true, withQuotes: true});
+
+                    $controls.append($expandBtn).append($collapseBtn);
+                    $container.append($controls).append($viewer);
+                    $(td).empty().append($container);
+                    
+                } else {
+                    td.innerHTML = cellData;
+                }
+            } catch (e) {
+                td.innerHTML = cellData;
+            }
           };
         } else if (imageColumnsIndices.includes(index)) {
           columnDef.createdCell = function(td, cellData, rowData, row, col) {
@@ -183,15 +303,40 @@
       var table = $('#tsvTable').DataTable({
         //serverSide: true,
         // processing: true,
-        fixedHeader: {
-          header: true,
-        },
-        colResize: {
-          resizeTable: true,
-          minColumnWidth: 10,
-        },
         autoWidth: false,
-        scrollX: false,
+        scrollX: false, // Disable DataTables scrollX, use CSS overflow instead
+        colResize: true,
+        layout: {
+            topStart: {
+                buttons: ['colvis']
+            },
+            topEnd: {
+                search: {},
+                paging: {}
+            },
+            bottomEnd: {
+                paging: {}
+            }
+        },
+        language: {
+            search: "全文检索:",
+            searchPlaceholder: "过滤当前加载的数据..."
+        },
+        initComplete: function() {
+            // Find the DataTables search label and input to add tooltips
+            var $filter = $('.dt-search, .dataTables_filter');
+            
+            // Add tooltip to the label
+            $filter.find('label').addClass('help-label').attr('title', '在当前加载的所有数据行中，对所有列进行关键词模糊匹配。');
+            
+            // Add tooltip to the input
+            $filter.find('input')
+                .attr('title', '输入关键词，实时过滤当前表格中的所有内容。注意：仅搜索当前"加载条数"范围内的数据。')
+                .tooltip({container: 'body', trigger: 'hover focus'});
+                
+            // Re-initialize tooltips for the label as we added the class/title dynamically
+            $filter.find('label').tooltip({container: 'body'});
+        },
         ajax: {
           url: "/api/tsv/{{path}}?start=" + start + "&length=" + length,
           dataSrc:'data'
@@ -204,16 +349,6 @@
           [20, 100, 'All']
         ],
         order:[]
-      });
-
-      // Listen for the column-resized.dt event from colResize
-      table.on('column-resized.dt', function(e, settings, columns) {
-        // Recalculate column widths and redraw the table
-        table.columns.adjust().draw();
-        // Update FixedHeader to synchronize cloned elements
-        if (table.fixedHeader) {
-          table.fixedHeader.update();
-        }
       });
 
       $('#previous').on('click', function(e) {
@@ -307,18 +442,17 @@
           $('#prev-value').text("<< " + prevOption.val());
           $('#prev-value').attr("value", prevOption.val());
           $('#prev-value').show();
+          $('#prev-value').tooltip('fixTitle');
         } else {
-          $('#prev-value').text("");
-          //$('#prev-value').disable();
+          $('#prev-value').hide();
         }
         if (nextOption.length > 0) {
           $('#next-value').text(nextOption.val() + " >>");
           $('#next-value').attr("value", nextOption.val());
           $('#next-value').show();
+          $('#next-value').tooltip('fixTitle');
         } else {
-          //$('#next-value').hide();
-          $('#next-value').text("");
-          //$('#next-value').disable();
+          $('#next-value').hide();
         }
       }
 
