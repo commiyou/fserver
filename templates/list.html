@@ -4,131 +4,232 @@
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-
-    <title>Dir {{ path }}</title>
+    <title>{{ path }}</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@3.3.7/dist/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
-
-    <style>
-    body {
-      padding: 20px;
-    }
-    .form-group {
-      margin-bottom: 20px;
-    }
-    .form-control {
-      width: auto;
-    }
-    </style>
     <link rel="stylesheet" href="https://cdn.datatables.net/2.0.3/css/dataTables.dataTables.css" />
-    <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
-    <script src="https://cdn.datatables.net/2.0.3/js/dataTables.js"></script>
+    <style>
+    body { background: #f5f6f8; padding: 0; font-size: 13px; }
+
+    .topbar {
+      background: #fff;
+      border-bottom: 1px solid #dde0e4;
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .breadcrumb {
+      background: none;
+      margin: 0;
+      padding: 0;
+      font-size: 14px;
+    }
+    .breadcrumb > li + li:before { color: #aaa; }
+    .breadcrumb a { color: #337ab7; }
+    .breadcrumb .active { color: #333; font-weight: 600; }
+
+    .content { padding: 16px 20px; }
+
+    .summary-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .summary-bar .counts { color: #666; font-size: 12px; }
+
+    .btn-group-filter .btn.active { background: #337ab7; color: #fff; border-color: #2e6da4; }
+
+    .card {
+      background: #fff;
+      border: 1px solid #dde0e4;
+      border-radius: 4px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.04);
+    }
+
+    table.dataTable thead th { background: #f8f9fa; font-size: 12px; font-weight: 600; color: #555; }
+    table.dataTable tbody td { vertical-align: middle; padding: 6px 10px; }
+    table.dataTable tbody tr:hover { background: #f0f4ff !important; }
+
+    .icon-dir  { color: #f0a30a; margin-right: 5px; }
+    .icon-file { color: #7a869a; margin-right: 5px; }
+
+    .name-link { color: #1a56a0; text-decoration: none; }
+    .name-link:hover { text-decoration: underline; }
+
+    .actions a { color: #555; font-size: 11px; margin-right: 6px; white-space: nowrap; }
+    .actions a:hover { color: #337ab7; }
+
+    .upload-zone {
+      border: 2px dashed #c8d0da;
+      border-radius: 4px;
+      padding: 10px 16px;
+      text-align: center;
+      background: #fafbfc;
+      transition: border-color 0.2s;
+    }
+    .upload-zone:hover { border-color: #337ab7; background: #f0f4ff; }
+    .upload-zone input[type=file] { display: none; }
+    .upload-zone label { cursor: pointer; margin: 0; color: #555; }
+
+    .size-col { color: #666; font-size: 12px; }
+    .date-col { color: #555; font-size: 12px; white-space: nowrap; }
+    .date-col small { color: #999; display: block; font-size: 11px; }
+
+    .dataTables_wrapper .dataTables_filter input { border: 1px solid #ccc; border-radius: 3px; padding: 4px 8px; }
+    .dataTables_wrapper .dataTables_length select { border: 1px solid #ccc; border-radius: 3px; padding: 2px 4px; }
+    </style>
   </head>
   <body>
-    <div class="row">
-     <nav class="navbar navbar-default ">
-         <div class="container-fluid">
-
-               <ul class="nav navbar-nav">
-
-                 <li><a><b>Directory: </b></a></li>
+    <!-- Top bar: breadcrumbs + upload -->
+    <div class="topbar">
+      <ol class="breadcrumb">
+        <li><a href="/list/"><span class="glyphicon glyphicon-home"></span></a></li>
         {% for crumb in breadcrumbs %}
-        <li><a class="navbar-link" href="/list/{{ crumb.url }}">{{ crumb.name }}</a> </li>
+          {% if loop.last %}
+            <li class="active">{{ crumb.name }}</li>
+          {% else %}
+            <li><a href="/list/{{ crumb.url }}">{{ crumb.name }}</a></li>
+          {% endif %}
         {% endfor %}
-            </ul>
-
-         </div>
-    </nav>
+      </ol>
+      <form action="/upload/{{path}}" method="post" enctype="multipart/form-data" id="uploadForm" style="margin:0;">
+        <div class="upload-zone" id="uploadZone" style="padding: 6px 14px;">
+          <input type="file" id="fileInput" name="file">
+          <label for="fileInput">
+            <span class="glyphicon glyphicon-upload" style="margin-right:5px;"></span>
+            <span id="uploadLabel">选择文件上传</span>
+          </label>
+          <button type="submit" class="btn btn-xs btn-primary" style="margin-left:8px;" id="uploadBtn" disabled>上传</button>
+        </div>
+      </form>
     </div>
-    <form action="/upload/{{path}}" method="post" enctype="multipart/form-data">
-    <div class="btn-group">
-      <input type="file" name="file" class="btn btn-primary" type="button">
-      <input type="submit" value="Upload" class="btn btn-info"  type="button">
+
+    <!-- Main content -->
+    <div class="content">
+      <div class="summary-bar">
+        <span class="counts" id="summary-text">共 {{ files|length }} 项</span>
+        <div class="btn-group btn-group-sm btn-group-filter" id="type-filter">
+          <button class="btn btn-default active" data-type="">全部</button>
+          <button class="btn btn-default" data-type="dir">
+            <span class="glyphicon glyphicon-folder-close"></span> 文件夹
+          </button>
+          <button class="btn btn-default" data-type="file">
+            <span class="glyphicon glyphicon-file"></span> 文件
+          </button>
+        </div>
+      </div>
+
+      <div class="card">
+        <table id="fileTable" class="display compact hover" style="width:100%">
+          <thead>
+            <tr>
+              <th>名称</th>
+              <th>大小</th>
+              <th>类型</th>
+              <th>操作</th>
+              <th>修改时间</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for file in files %}
+            <tr>
+              <td>
+                {% if file.type == "dir" %}
+                  <span class="glyphicon glyphicon-folder-close icon-dir"></span>
+                  <a class="name-link" href="/list/{{path}}/{{file.name}}">{{file.name}}</a>
+                {% else %}
+                  <span class="glyphicon glyphicon-file icon-file"></span>
+                  <a class="name-link" href="/list/{{path}}/{{file.name}}">{{file.name}}</a>
+                {% endif %}
+              </td>
+              <td class="size-col" data-order="{{ file.size if file.type == 'file' else -1 }}">
+                {{ file.human_size if file.type == 'file' else '—' }}
+              </td>
+              <td>{{ file.type }}</td>
+              <td class="actions">
+                {% if file.type == "file" %}
+                  <a href="/tsv/{{path}}/{{file.name}}" title="预览表格"><span class="glyphicon glyphicon-th-list"></span> 预览</a>
+                  <a href="/download/{{path}}/{{file.name}}" title="下载文件"><span class="glyphicon glyphicon-download-alt"></span> 下载</a>
+                {% endif %}
+              </td>
+              <td class="date-col" data-order="{{ file.time }}">
+                {{ file.date_str }}
+                <small>{{ file.human_time }}</small>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
-    </form>
-    <table id="fileTable" class="display compact hover" style="width:95%">
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>real size</th>
-          <th>Size</th>
-          <th>Type</th>
-          <th>Actions</th>
-          <th>Time</th>
-          <th>real time</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for file in files %}
-        <tr>
-          <td>
-            {% if file.type == "file" %}
-            <a class="text-success" href="/list/{{path}}/{{file.name}}">{{file.name}}</a>
-            {% else %}
-            <a class="text-primary font-weight-bold" href="/list/{{path}}/{{file.name}}">{{file.name}}</a>
-            {% endif %}
 
-
-          </td>
-          <td>{{file.size}}</td>
-          <td>{{file.human_size}}</td>
-          <td>{{file.type}}</td>
-          <td>
-            {% if file.type == "file" %}
-            <a href="/tsv/{{path}}/{{file.name}}">tsv</a>
-            <a href="/download/{{path}}/{{file.name}}">Download</a>
-            {% endif %}
-          </td>
-          <td>{{file.human_time}}</td>
-          <td>{{file.time}}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+    <script src="https://cdn.datatables.net/2.0.3/js/dataTables.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@3.3.7/dist/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
     <script>
-      $(document).ready( function () {
-        $('#fileTable').DataTable( {
-          // paging: false,
-          columnDefs: [
-            {
-              target: 1,
-              visible: false,
-              searchable: false
-            },
-            {
-              target: 2,
-              orderData:[1,2]
-            },
-            {
-              target: 6,
-              visible: false,
-              searchable: false
-            },
-            {
-              target: 5,
-              orderData:[6,5]
-            },
-          ],
-          order: [[5, 'desc']],
-          stateSave: true,
-          scrollCollapse: true,
-          lengthMenu: [
-            [25, 100,  -1],
-            [25, 100, 'All']
-          ],
-          //scrollY: '80vh'
-
-        });
-
-
-        $('form').submit(function() {
-          var fileInput = $('input[type="file"]');
-          if (fileInput.get(0).files.length === 0) {
-            alert("Please select a file before uploading.");
-            return false; // Prevent form submission
-          }
-        });
+    $(document).ready(function() {
+      var table = $('#fileTable').DataTable({
+        columnDefs: [
+          // col 2 = 类型: 隐藏显示，但保留 searchable 供 filter 使用
+          { targets: 2, visible: false, searchable: true },
+        ],
+        // col 4 = 修改时间，data-order 上是 mtime float，直接按数值降序
+        order: [[4, 'desc']],
+        // 不保存 state，避免旧索引/搜索值干扰
+        stateSave: false,
+        language: {
+          search: "搜索:",
+          searchPlaceholder: "文件名...",
+          lengthMenu: "每页 _MENU_ 条",
+          info: "第 _START_-_END_ 条，共 _TOTAL_ 条",
+          infoEmpty: "无数据",
+          zeroRecords: "没有匹配的结果",
+          paginate: { previous: "上一页", next: "下一页" }
+        },
+        lengthMenu: [[25, 100, -1], [25, 100, "全部"]],
+        drawCallback: function() { updateSummary(); }
       });
 
+      // 类型筛选：对隐藏的 col 2 做正则精确匹配
+      $('#type-filter .btn').on('click', function() {
+        $('#type-filter .btn').removeClass('active');
+        $(this).addClass('active');
+        var type = $(this).data('type');
+        table.column(2)
+             .search(type ? ('^' + type + '$') : '', { regex: true, smart: false })
+             .draw();
+      });
+
+      function updateSummary() {
+        var info = table.page.info();
+        var total = {{ files|length }};
+        var shown = info.recordsDisplay;
+        $('#summary-text').text(shown === total ? ('共 ' + total + ' 项') : ('显示 ' + shown + ' / ' + total + ' 项'));
+      }
+
+      // 上传：选文件后显示文件名并激活按钮
+      $('#fileInput').on('change', function() {
+        var name = this.files.length ? this.files[0].name : '选择文件上传';
+        $('#uploadLabel').text(name);
+        $('#uploadBtn').prop('disabled', !this.files.length);
+      });
+
+      // 拖拽上传
+      var zone = document.getElementById('uploadZone');
+      zone.addEventListener('dragover', function(e) { e.preventDefault(); $(this).css('border-color', '#337ab7'); });
+      zone.addEventListener('dragleave', function() { $(this).css('border-color', '#c8d0da'); });
+      zone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        $(this).css('border-color', '#c8d0da');
+        var files = e.dataTransfer.files;
+        if (files.length) {
+          document.getElementById('fileInput').files = files;
+          $('#uploadLabel').text(files[0].name);
+          $('#uploadBtn').prop('disabled', false);
+        }
+      });
+    });
     </script>
   </body>
 </html>

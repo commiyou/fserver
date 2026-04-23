@@ -117,9 +117,15 @@
                 </h3>
             </div>
             <div class="col-md-4 text-right">
-                <a class="btn btn-default shadow-sm" href="/list/{{parent_path}}" style="font-weight: bold; padding: 8px 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.15); margin-right: 10px;" title="返回上一级文件夹目录">
+                <a class="btn btn-default shadow-sm" href="/list/{{parent_path}}" style="font-weight: bold; padding: 8px 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.15); margin-right: 5px;" title="返回上一级文件夹目录">
                     <span class="glyphicon glyphicon-folder-open"></span> 打开文件夹
                 </a>
+                <a class="btn btn-default shadow-sm" href="?{{ request.url.query }}&reload=true" title="强制从磁盘重新加载，清除缓存" style="padding: 8px 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.15); margin-right: 5px;">
+                    <span class="glyphicon glyphicon-refresh"></span>
+                </a>
+                <button class="btn btn-default shadow-sm" data-toggle="modal" data-target="#settingsModal" title="列显示设置" style="padding: 8px 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.15); margin-right: 5px;">
+                    <span class="glyphicon glyphicon-cog"></span>
+                </button>
                 <a class="btn btn-success shadow-sm" href="/excel/{{path}}?{{ request.url.query }}" target="_blank" style="font-weight: bold; padding: 8px 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.15);">
                     <span class="glyphicon glyphicon-download-alt"></span> 导出 Excel
                 </a>
@@ -226,6 +232,7 @@
       
       var start = parseInt($('#start').text());
       var length = parseInt($('#length').val());
+      var extraParams = '{{ extra_params | safe }}';
 
       // Get columns from Jinja2 as JSON string and parse it
       var rawColumns = '{{ columns | tojson }}';
@@ -338,7 +345,7 @@
             $filter.find('label').tooltip({container: 'body'});
         },
         ajax: {
-          url: "/api/tsv/{{path}}?start=" + start + "&length=" + length,
+          url: "/api/tsv/{{path}}?start=" + start + "&length=" + length + extraParams,
           dataSrc:'data'
         },
         columns: dataTableColumns,
@@ -363,7 +370,7 @@
           if (start < 0) start = 0;
           $('#start').text(start);  
           $('#input-start').val(start);  // 更新输入框的pageno
-          table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value)).load();
+          table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value) + extraParams).load();
         }
       });
 
@@ -376,14 +383,13 @@
         start += length;
         $('#start').text(start);  // 更新页面上的start
         $('#input-start').val(start);  // 更新输入框的start
-        //table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value)).load();
-        table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value)).load();
+        table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value) + extraParams).load();
       });
 
       $('#length').on('change', function() {
         key = $("#key").val();
         length = parseInt($(this).val());
-        table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value)).load();
+        table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value) + extraParams).load();
       });
 
       // 当用户在输入框中输入start并按回车时，更新start并重新加载表格
@@ -392,7 +398,7 @@
           start = parseInt($(this).val());
           if (start < 0)  start = 0;
           $('#start').text(start);  // 更新页面上的start
-          table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value)).load();
+          table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value) + extraParams).load();
           return false;  // 阻止表单的默认提交行为
         }
       });
@@ -402,24 +408,23 @@
         key = $(this).val();
         if (!key) {
           update_value_labels(key);
-          table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length).load();
+          table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length + extraParams).load();
           return;
         }
 
-        $.getJSON("/api/tsv/key/{{path}}?key=" + key, function(data) {
+        $.getJSON("/api/tsv/key/{{path}}?key=" + key + extraParams, function(data) {
           $('#value').empty();
           $.each(data, function(i, item) {
-            $('#value').append($('<option>', { 
+            $('#value').append($('<option>', {
               value: item,
-              text: item 
+              text: item
             }));
             console.log("add key=" + item + "&i=" +i )
           });
           value = $("#value :first-child").text();
           if (value) {
-            //$("#label-value").text(first_value);
             update_value_labels(value);
-            table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length + "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value)).load();
+            table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length + "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value) + extraParams).load();
           }
         });
 
@@ -461,26 +466,130 @@
         update_value_labels(value);
         console.log("input " + value)
         if (!value) {
-          table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length).load();
+          table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length + extraParams).load();
           return;
         }
 
         console.log("req key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value))
-        table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length + "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value)).load();
+        table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length + "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value) + extraParams).load();
         $(this).val("");
       });
 
       $('#prev-value, #next-value').on('click', function(e) {
         e.preventDefault();
-        //if (parseInt($("#length").text()) <= 0) return;
         value = $(this).attr('value')
         update_value_labels(value);
-        //table.ajax.url($(this).attr('href')).load();
-        table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length + "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value)).load();
+        table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length + "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value) + extraParams).load();
+      });
+
+      // Settings modal: apply
+      $('#settings-apply').on('click', function() {
+        var params = [];
+        var names = $('#setting-names').val().trim();
+        var header = $('#setting-header').is(':checked');
+        var jsonCols = $('#setting-json-cols').val().trim();
+        var jsonLinkCols = $('#setting-json-link-cols').val().trim();
+        var imageCols = $('#setting-image-cols').val().trim();
+        var hideCols = $('#setting-hide-cols').val().trim();
+
+        if (names)        params.push('names='         + encodeURIComponent(names));
+        if (!header)      params.push('header=false');
+        if (jsonCols)     params.push('json_cols='      + encodeURIComponent(jsonCols));
+        if (jsonLinkCols) params.push('json_link_cols=' + encodeURIComponent(jsonLinkCols));
+        if (imageCols)    params.push('image_cols='     + encodeURIComponent(imageCols));
+        if (hideCols)     params.push('hide_cols='      + encodeURIComponent(hideCols));
+
+        var url = '/tsv/{{path}}' + (params.length ? '?' + params.join('&') : '');
+        window.location.href = url;
+      });
+
+      // Settings modal: clear all settings
+      $('#settings-clear').on('click', function() {
+        window.location.href = '/tsv/{{path}}';
       });
 
     });
 
     </script>
+
+    <!-- Settings Modal -->
+    <div class="modal fade" id="settingsModal" tabindex="-1" role="dialog">
+      <div class="modal-dialog" role="document" style="max-width: 500px;">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+            <h4 class="modal-title"><span class="glyphicon glyphicon-cog"></span> 列显示设置</h4>
+          </div>
+          <div class="modal-body">
+            <div class="form-horizontal" style="font-size: 13px;">
+
+              <div class="form-group" style="margin-bottom: 12px;">
+                <label class="col-sm-4 control-label" style="padding-top:6px;">首行为表头</label>
+                <div class="col-sm-8" style="padding-top:6px;">
+                  <input type="checkbox" id="setting-header" {% if param_header %}checked{% endif %}>
+                  <span class="text-muted small" style="margin-left:6px;">取消勾选则所有行均视为数据</span>
+                </div>
+              </div>
+
+              <div class="form-group" style="margin-bottom: 12px;">
+                <label class="col-sm-4 control-label" for="setting-names">自定义列名</label>
+                <div class="col-sm-8">
+                  <input type="text" class="form-control input-sm" id="setting-names"
+                         placeholder="col1,col2,col3 (逗号分隔)"
+                         value="{{ param_names }}">
+                  <span class="help-block" style="font-size:11px; margin:2px 0 0;">按顺序覆盖列名，优先级高于首行</span>
+                </div>
+              </div>
+
+              <div class="form-group" style="margin-bottom: 12px;">
+                <label class="col-sm-4 control-label" for="setting-json-cols">JSON 展示列</label>
+                <div class="col-sm-8">
+                  <input type="text" class="form-control input-sm" id="setting-json-cols"
+                         placeholder="列名或序号，逗号分隔"
+                         value="{{ param_json_cols }}">
+                  <span class="help-block" style="font-size:11px; margin:2px 0 0;">内联折叠展示 JSON 内容</span>
+                </div>
+              </div>
+
+              <div class="form-group" style="margin-bottom: 12px;">
+                <label class="col-sm-4 control-label" for="setting-json-link-cols">JSON 链接列</label>
+                <div class="col-sm-8">
+                  <input type="text" class="form-control input-sm" id="setting-json-link-cols"
+                         placeholder="列名或序号，逗号分隔"
+                         value="{{ param_json_link_cols }}">
+                  <span class="help-block" style="font-size:11px; margin:2px 0 0;">点击单元格在新窗口打开 JSON Viewer</span>
+                </div>
+              </div>
+
+              <div class="form-group" style="margin-bottom: 12px;">
+                <label class="col-sm-4 control-label" for="setting-image-cols">图片列</label>
+                <div class="col-sm-8">
+                  <input type="text" class="form-control input-sm" id="setting-image-cols"
+                         placeholder="列名或序号，逗号分隔"
+                         value="{{ param_image_cols }}">
+                  <span class="help-block" style="font-size:11px; margin:2px 0 0;">将 URL 渲染为缩略图</span>
+                </div>
+              </div>
+
+              <div class="form-group" style="margin-bottom: 4px;">
+                <label class="col-sm-4 control-label" for="setting-hide-cols">隐藏列</label>
+                <div class="col-sm-8">
+                  <input type="text" class="form-control input-sm" id="setting-hide-cols"
+                         placeholder="列名或序号，逗号分隔"
+                         value="{{ param_hide_cols }}">
+                  <span class="help-block" style="font-size:11px; margin:2px 0 0;">不显示这些列（数据仍加载）</span>
+                </div>
+              </div>
+
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">取消</button>
+            <button type="button" class="btn btn-danger btn-sm" id="settings-clear" style="float:left;">清除所有设置</button>
+            <button type="button" class="btn btn-primary" id="settings-apply">应用并跳转</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </body>
 </html>

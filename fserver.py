@@ -1,6 +1,7 @@
 import datetime
 import json
 import os
+import re
 import shutil
 import sqlite3
 import sys
@@ -28,6 +29,18 @@ from starlette.responses import FileResponse, JSONResponse, RedirectResponse
 
 cache = TTLCache(maxsize=30, ttl=3600 * 48)  # 缓存最多10个文件，每个文件缓存48h
 
+# Excel 不允许的控制字符（TAB/LF/CR 除外）
+_EXCEL_ILLEGAL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
+def _clean_for_excel(df: DataFrame) -> DataFrame:
+    """移除 DataFrame 中 Excel 不支持的控制字符。"""
+    def _clean(val: Any) -> Any:
+        if isinstance(val, str):
+            return _EXCEL_ILLEGAL_CHARS_RE.sub("", val)
+        return val
+    return df.map(_clean)
+
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
@@ -38,13 +51,15 @@ def get_directory_contents(directory: Path | str) -> list[dict[str, Any]]:
     contents = []
     for item in os.scandir(directory):
         if os.path.exists(item):
+            mtime = item.stat().st_mtime
             item_info = {
                 "name": item.name,
                 "size": item.stat().st_size if item.is_file() else "",
-                "time": item.stat().st_mtime,
+                "time": mtime,
                 "type": "file" if item.is_file() else "dir",
                 "human_size": human_readable.file_size(item.stat().st_size, gnu=True),
-                "human_time": human_readable.date_time(datetime.datetime.fromtimestamp(item.stat().st_mtime)),  # noqa: DTZ006
+                "human_time": human_readable.date_time(datetime.datetime.fromtimestamp(mtime)),  # noqa: DTZ006
+                "date_str": datetime.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M"),  # noqa: DTZ006
             }
             contents.append(item_info)
     return contents
@@ -110,12 +125,9 @@ async def download_excel(
 
     if path.suffix in {".xls", ".xlsx"}:
         return FileResponse(path)
-    k = (file_path,)
-    if k in cache:
-        del cache[k]
     names_list = None
     if names:
-        names_list = [str(x) for x in names.split(",")]
+        names_list = tuple(str(x) for x in names.split(","))
     df = read_file(file_path, names_list, header=header)
 
     if df is None:
@@ -129,7 +141,7 @@ async def download_excel(
 
         excel_file_name = excel_path.stem + ".xlsx"
         with ExcelWriter(excel_path) as writer:
-            df.to_excel(writer, index=False)
+            _clean_for_excel(df).to_excel(writer, index=False)
         return FileResponse(excel_path, filename=excel_file_name)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from None
@@ -146,13 +158,6 @@ async def download_file(file_path: str) -> Response:
     return FileResponse(file_path)
 
 
-def to_img_tag(x: Any) -> str:
-    """convert url to img tag"""
-    if pd.isna(x) or not isinstance(x, str) or not x.strip():
-        return ""
-    return f'<img src="{x}" height="100" />'
-
-
 def read_file(
     file_path: str,
     names_list: tuple[str, ...] | None = None,
@@ -160,7 +165,7 @@ def read_file(
     header: bool = True,
 ) -> DataFrame | None:
     """以file name为key load&cache文件"""
-    k = (file_path,)
+    k = (file_path, names_list, header)
     if k in cache:
         return cache[k]
     path = Path(file_path)
@@ -276,7 +281,7 @@ async def read_tsv(  # noqa: PLR0917
     if not path.is_file():
         return {"error": f"File not found: {file_path}"}
 
-    k = (file_path,)
+    k = (file_path, tuple(names.split(",")) if names else None, header)
     print(f"reload {reload}, incache {k in cache}, {file_path}")
     if reload and k in cache:
         del cache[k]
@@ -301,9 +306,16 @@ async def read_tsv(  # noqa: PLR0917
     columns = df.columns.tolist()
     name = path.name
     parent_path = path.parent
-    
+
     # Check if a warning was attached during parsing (e.g. fallback triggered)
     warning_msg = getattr(df, "attrs", {}).get("warning_msg", None)
+
+    # Build extra params to pass through to API calls in the template
+    extra_params = ""
+    if names:
+        extra_params += f"&names={names}"
+    if not header:
+        extra_params += "&header=false"
 
     return templates.TemplateResponse(
         "tsv.html",
@@ -316,11 +328,18 @@ async def read_tsv(  # noqa: PLR0917
             "length": length,
             "start": start,
             "recordsTotal": len(df),
-            "json_link_cols": json_link_col_list,  # Pass json_link_cols to the template
-            "json_cols": json_col_list,  # Pass json_cols to the template
+            "json_link_cols": json_link_col_list,
+            "json_cols": json_col_list,
             "image_cols": image_col_list,
             "hide_cols": hide_col_list,
             "warning_msg": warning_msg,
+            "extra_params": extra_params,
+            "param_names": names or "",
+            "param_header": header if header is not None else True,
+            "param_json_cols": json_cols or "",
+            "param_json_link_cols": json_link_cols or "",
+            "param_image_cols": image_cols or "",
+            "param_hide_cols": hide_cols or "",
         },
     )
 
@@ -352,16 +371,19 @@ async def api_tsv_key(
     file_path: str,
     key: str,
     reload: Optional[bool] = False,
+    names: Optional[str] = None,
+    header: Optional[bool] = True,
 ):
     """tsv html get keys of tsv file"""
     path = Path(file_path)
     if not path.is_file():
         return {"error": f"File not found: {file_path}"}
 
-    if reload and (file_path,) in cache:
-        del cache[file_path,]
+    names_list = tuple(names.split(",")) if names else None
+    if reload and (file_path, names_list, header) in cache:
+        del cache[(file_path, names_list, header)]
 
-    df = read_file(file_path)
+    df = read_file(file_path, names_list, header=header)
     assert df is not None
     keys = df[str(key)].dropna().unique().tolist()
 
@@ -378,6 +400,8 @@ async def api_tsv(
     key: Optional[str] = None,
     value: Optional[str] = None,
     draw: Optional[int] = -1,
+    names: Optional[str] = None,
+    header: Optional[bool] = True,
     json_link_cols: Optional[str] = None,
     json_cols: Optional[str] = None,
 ):
@@ -386,12 +410,11 @@ async def api_tsv(
     if not path.is_file():
         return {"error": f"File not found: {file_path}"}
 
-    if reload and (file_path,) in cache:
-        del cache[file_path,]
+    names_list = tuple(names.split(",")) if names else None
+    if reload and (file_path, names_list, header) in cache:
+        del cache[(file_path, names_list, header)]
 
-    # Pass json_col_list as json_cols to apply pretty-printing
-    # Pass json_link_col_list as raw_json_cols to prevent pretty-printing for clickable columns
-    df = read_file(file_path)
+    df = read_file(file_path, names_list, header=header)
 
     if df is None:
         return {"error": "File not found."}
