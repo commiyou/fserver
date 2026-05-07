@@ -10,6 +10,7 @@ from typing import Annotated, Any, Optional
 
 import aiofiles
 import human_readable
+import markdown as md_lib
 import pandas as pd
 from cachetools import TTLCache
 from fastapi import (
@@ -70,9 +71,11 @@ async def list_files(request: Request, file_path: Path) -> Response:
     """list files in `file_path`"""
     path = Path(file_path)
     if path.is_file():
-        url = app.url_path_for("tsv", file_path=file_path)
-        response = RedirectResponse(url=url)
-        return response
+        if path.suffix.lower() == ".md":
+            url = app.url_path_for("render_md", file_path=file_path)
+        else:
+            url = app.url_path_for("tsv", file_path=file_path)
+        return RedirectResponse(url=url)
     files = get_directory_contents(file_path)
     breadcrumbs = [{"name": part, "url": "/" + "/".join(path.parts[: i + 1])} for i, part in enumerate(path.parts)]
 
@@ -363,6 +366,61 @@ async def get_txt_content(file_path: str) -> PlainTextResponse:
         return PlainTextResponse(content)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"读取文件失败: {e}")
+
+
+@app.get("/md/{file_path:path}", name="render_md")
+async def render_md(request: Request, file_path: str) -> Response:
+    """Render a Markdown file as HTML."""
+    path = Path(file_path)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    async with aiofiles.open(path, encoding="utf-8") as f:
+        content = await f.read()
+
+    html_body = md_lib.markdown(
+        content,
+        extensions=["tables", "fenced_code", "codehilite", "toc", "nl2br"],
+    )
+    parent_path = str(path.parent)
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{path.name}</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.1/github-markdown.min.css">
+  <style>
+    body {{ background: #f6f8fa; margin: 0; padding: 0; }}
+    .topbar {{
+      background: #fff; border-bottom: 1px solid #dde0e4;
+      padding: 8px 20px; font-size: 13px;
+    }}
+    .topbar a {{ color: #1a56a0; text-decoration: none; margin-right: 8px; }}
+    .topbar a:hover {{ text-decoration: underline; }}
+    .markdown-body {{
+      background: #fff;
+      max-width: 900px;
+      margin: 24px auto;
+      padding: 32px 40px;
+      border: 1px solid #dde0e4;
+      border-radius: 6px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    }}
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <a href="/list/{parent_path}">&#8592; {parent_path}/</a>
+    <span style="color:#555">{path.name}</span>
+    <a href="/download/{file_path}" style="float:right">下载</a>
+  </div>
+  <article class="markdown-body">
+{html_body}
+  </article>
+</body>
+</html>"""
+    return Response(content=html, media_type="text/html")
 
 
 @app.get("/api/tsv/key/{file_path:path}")
