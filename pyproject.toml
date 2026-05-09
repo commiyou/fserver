@@ -15,6 +15,7 @@ dependencies = [
     "python-multipart>=0.0.20",
     "uvicorn>=0.34.3",
     "markdown>=3.7",
+    "openpyxl>=3.1.5",
 ]
 
 [[tool.uv.index]]

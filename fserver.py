@@ -378,11 +378,17 @@ async def render_md(request: Request, file_path: str) -> Response:
     async with aiofiles.open(path, encoding="utf-8") as f:
         content = await f.read()
 
-    html_body = md_lib.markdown(
-        content,
+    converter = md_lib.Markdown(
         extensions=["tables", "fenced_code", "codehilite", "toc", "nl2br"],
+        extension_configs={"toc": {"title": "目录"}},
     )
+    html_body = converter.convert(content)
+    toc = getattr(converter, "toc", "")  # "" when no headings found
+
     parent_path = str(path.parent)
+    toc_sidebar = f'<nav class="toc-sidebar"><div class="toc-title">目录</div>{toc}</nav>' if toc.strip() and "<li>" in toc else ""
+    has_toc = bool(toc_sidebar)
+
     html = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -390,23 +396,62 @@ async def render_md(request: Request, file_path: str) -> Response:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{path.name}</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.1/github-markdown.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
   <style>
     body {{ background: #f6f8fa; margin: 0; padding: 0; }}
     .topbar {{
       background: #fff; border-bottom: 1px solid #dde0e4;
-      padding: 8px 20px; font-size: 13px;
+      padding: 8px 20px; font-size: 13px; position: sticky; top: 0; z-index: 100;
     }}
     .topbar a {{ color: #1a56a0; text-decoration: none; margin-right: 8px; }}
     .topbar a:hover {{ text-decoration: underline; }}
+    .page-layout {{
+      display: flex;
+      max-width: {'1200px' if has_toc else '960px'};
+      margin: 24px auto;
+      gap: 24px;
+      padding: 0 20px;
+      align-items: flex-start;
+    }}
     .markdown-body {{
       background: #fff;
-      max-width: 900px;
-      margin: 24px auto;
+      flex: 1;
+      min-width: 0;
       padding: 32px 40px;
       border: 1px solid #dde0e4;
       border-radius: 6px;
       box-shadow: 0 1px 3px rgba(0,0,0,.06);
     }}
+    /* TOC sidebar */
+    .toc-sidebar {{
+      width: 220px;
+      flex-shrink: 0;
+      background: #fff;
+      border: 1px solid #dde0e4;
+      border-radius: 6px;
+      padding: 14px 16px;
+      position: sticky;
+      top: 48px;
+      max-height: calc(100vh - 72px);
+      overflow-y: auto;
+      font-size: 13px;
+    }}
+    .toc-title {{ font-weight: 600; margin-bottom: 8px; color: #333; }}
+    .toc-sidebar .toc ul {{ list-style: none; padding-left: 12px; margin: 0; }}
+    .toc-sidebar .toc > ul {{ padding-left: 0; }}
+    .toc-sidebar .toc li {{ margin: 4px 0; }}
+    .toc-sidebar .toc a {{ color: #1a56a0; text-decoration: none; }}
+    .toc-sidebar .toc a:hover {{ text-decoration: underline; }}
+    /* Code block copy button */
+    .code-wrapper {{ position: relative; }}
+    .copy-btn {{
+      position: absolute; top: 6px; right: 8px;
+      background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px;
+      padding: 2px 8px; font-size: 11px; cursor: pointer; opacity: 0;
+      transition: opacity 0.15s;
+    }}
+    .code-wrapper:hover .copy-btn {{ opacity: 1; }}
+    .copy-btn.copied {{ background: #d4edda; border-color: #97c8a0; color: #2d6a4f; }}
   </style>
 </head>
 <body>
@@ -415,9 +460,46 @@ async def render_md(request: Request, file_path: str) -> Response:
     <span style="color:#555">{path.name}</span>
     <a href="/download/{file_path}" style="float:right">下载</a>
   </div>
-  <article class="markdown-body">
+  <div class="page-layout">
+    {toc_sidebar}
+    <article class="markdown-body">
 {html_body}
-  </article>
+    </article>
+  </div>
+  <script>
+    // Inject copy buttons into every <pre><code> block
+    document.querySelectorAll('pre').forEach(function(pre) {{
+      var wrapper = document.createElement('div');
+      wrapper.className = 'code-wrapper';
+      pre.parentNode.insertBefore(wrapper, pre);
+      wrapper.appendChild(pre);
+      var btn = document.createElement('button');
+      btn.className = 'copy-btn';
+      btn.textContent = '复制';
+      wrapper.appendChild(btn);
+      btn.addEventListener('click', function() {{
+        var code = pre.querySelector('code') || pre;
+        var text = code.innerText;
+        function onSuccess() {{
+          btn.textContent = '已复制';
+          btn.classList.add('copied');
+          setTimeout(function() {{ btn.textContent = '复制'; btn.classList.remove('copied'); }}, 1500);
+        }}
+        if (navigator.clipboard && navigator.clipboard.writeText) {{
+          navigator.clipboard.writeText(text).then(onSuccess);
+        }} else {{
+          var ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+          document.body.appendChild(ta);
+          ta.focus(); ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+          onSuccess();
+        }}
+      }});
+    }});
+  </script>
 </body>
 </html>"""
     return Response(content=html, media_type="text/html")
