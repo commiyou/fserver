@@ -5,6 +5,9 @@ import re
 import shutil
 import sqlite3
 import sys
+import tempfile
+import uuid
+from io import BytesIO
 from pathlib import Path
 from typing import Annotated, Any, Optional
 
@@ -32,6 +35,10 @@ cache = TTLCache(maxsize=30, ttl=3600 * 48)  # 缓存最多10个文件，每个�
 
 # Excel 不允许的控制字符（TAB/LF/CR 除外）
 _EXCEL_ILLEGAL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+# Excel 临时文件目录
+EXCEL_TEMP_DIR = Path(tempfile.gettempdir()) / "fserver_excel"
+EXCEL_TEMP_DIR.mkdir(exist_ok=True)
 
 
 def _clean_for_excel(df: DataFrame) -> DataFrame:
@@ -137,15 +144,22 @@ async def download_excel(
         raise HTTPException(status_code=404, detail="File not found")
 
     try:
-        if path.suffix in [".tsv", ".csv", ".data", "txt"]:
-            excel_path = path.with_suffix(".xlsx")
-        else:
-            excel_path = Path(str(path) + ".xlsx")
-
-        excel_file_name = excel_path.stem + ".xlsx"
-        with ExcelWriter(excel_path) as writer:
+        excel_file_name = path.stem + ".xlsx"
+        buf = BytesIO()
+        with ExcelWriter(buf, engine="openpyxl") as writer:
             _clean_for_excel(df).to_excel(writer, index=False)
-        return FileResponse(excel_path, filename=excel_file_name)
+        data = buf.getvalue()
+        # 直接用 Response 返回字节，避免 FileResponse 的 Range/206 处理（h11 Content-Length 不一致问题）
+        from urllib.parse import quote
+        return Response(
+            content=data,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{quote(excel_file_name)}",
+                "Content-Length": str(len(data)),
+                "Accept-Ranges": "none",
+            },
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from None
 
@@ -185,12 +199,13 @@ def read_file(
             try:
                 if names_list:
                     df = pd.read_csv(path, sep="\t", names=list(names_list))
-                    df.columns = [str(x).replace(".", "-") for x in df.columns]
                 elif header:
                     df = pd.read_csv(path, sep="\t")
                 else:
                     df = pd.read_csv(path, sep="\t", header=None)
                     df.columns = [f"col{i}" for i in range(df.shape[1])]
+                # 列名中的 '.' 会被前端 DataTables 当作嵌套路径，统一替换
+                df.columns = [str(x).replace(".", "-") for x in df.columns]
             except pd.errors.ParserError:
                 # Fallback for ragged files (variable column counts)
                 # "Good Taste": Don't crash, handle the data structure as it is (a ragged matrix)
@@ -211,8 +226,7 @@ def read_file(
                         
                         new_cols = list(names_list)[:limit] + [f"col{i}" for i in range(limit, len(current_cols))]
                         df.columns = new_cols
-                        df.columns = [str(x).replace(".", "-") for x in df.columns]
-                        
+
                     elif header:
                         # First row is header
                         if len(df) > 0:
@@ -229,6 +243,8 @@ def read_file(
                     else:
                         # No header, just rename all columns
                         df.columns = [f"col{i}" for i in range(df.shape[1])]
+
+                    df.columns = [str(x).replace(".", "-") for x in df.columns]
                     
                     # Attach a warning to the DataFrame to notify the UI
                     df.attrs["warning_msg"] = "⚠️ 注意：检测到文件列数不规则（Ragged Data）。已启用兼容模式加载，部分列可能自动填充为空值。"
