@@ -1,4 +1,5 @@
 import datetime
+import html as html_mod
 import json
 import os
 import re
@@ -394,11 +395,24 @@ async def render_md(request: Request, file_path: str) -> Response:
     async with aiofiles.open(path, encoding="utf-8") as f:
         content = await f.read()
 
+    # Extract mermaid blocks before markdown conversion to prevent codehilite mangling
+    _mermaid_blocks: list[str] = []
+    def _replace_mermaid(m: re.Match) -> str:
+        _mermaid_blocks.append(m.group(1))
+        return f'\n<div class="mermaid">\n%%MERMAID_{len(_mermaid_blocks) - 1}%%\n</div>\n'
+    content = re.sub(r'```mermaid\s*\n(.*?)```', _replace_mermaid, content, flags=re.DOTALL)
+
     converter = md_lib.Markdown(
         extensions=["tables", "fenced_code", "codehilite", "toc", "nl2br"],
         extension_configs={"toc": {"title": "目录"}},
     )
     html_body = converter.convert(content)
+
+    # Restore mermaid content as raw text (mermaid.js parses it directly)
+    for i, block in enumerate(_mermaid_blocks):
+        placeholder = f'%%MERMAID_{i}%%'
+        html_body = html_body.replace(html_mod.escape(placeholder), block)
+        html_body = html_body.replace(placeholder, block)
     toc = getattr(converter, "toc", "")  # "" when no headings found
 
     parent_path = str(path.parent)
@@ -482,6 +496,10 @@ async def render_md(request: Request, file_path: str) -> Response:
 {html_body}
     </article>
   </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.4.0/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({{ startOnLoad: true, theme: 'default' }});
+  </script>
   <script>
     // Inject copy buttons into every <pre><code> block
     document.querySelectorAll('pre').forEach(function(pre) {{
