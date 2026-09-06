@@ -67,6 +67,25 @@ You can also run the Python file directly. That mode defaults to port `8113`:
 python fserver.py
 ```
 
+## `fp` URL command
+
+After installing the project, use `fp` to print fserver URLs for files and directories. Input paths are always resolved to absolute paths:
+
+```bash
+uv pip install -e .
+fp README.md
+fp data.tsv some-directory
+```
+
+Markdown files print preview and interactive HTML download URLs. Tabular files print table-view and Excel URLs. Directories print only the directory listing URL.
+
+```bash
+fp --host bddwd-acg-tge43qlalf9.bddwd.baidu.com --port 8113 README.md
+fp --format json README.md
+```
+
+Override the server address with `--host`, `--port`, and `--scheme`. Defaults are the local FQDN, `8113`, and `http`.
+
 ## API
 
 ### Browse and view

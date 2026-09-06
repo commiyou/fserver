@@ -18,8 +18,13 @@ dependencies = [
     "openpyxl>=3.1.5",
 ]
 
+[project.scripts]
+fp = "fp:main"
+
+[tool.setuptools]
+py-modules = ["fserver", "fp"]
+
 [[tool.uv.index]]
 # Required URL for the index.
 url = "https://pip.baidu-int.com/simple/"
 default=true
-

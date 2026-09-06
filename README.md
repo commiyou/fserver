@@ -67,6 +67,25 @@ uvicorn fserver:app --host 0.0.0.0 --port 8000 --reload
 python fserver.py
 ```
 
+## `fp` 地址命令
+
+安装项目后可以使用 `fp` 为文件或目录生成 fserver 地址。命令始终使用输入路径的绝对路径：
+
+```bash
+uv pip install -e .
+fp README.md
+fp data.tsv some-directory
+```
+
+Markdown 文件会输出预览和交互式 HTML 下载地址；表格文件会输出表格查看和 Excel 地址；目录只输出目录浏览地址。
+
+```bash
+fp --host bddwd-acg-tge43qlalf9.bddwd.baidu.com --port 8113 README.md
+fp --format json README.md
+```
+
+可通过 `--host`、`--port` 和 `--scheme` 覆盖服务器地址，默认值为本机 FQDN、`8113` 和 `http`。
+
 ## API
 
 ### 浏览和查看
