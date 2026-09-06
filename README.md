@@ -1,96 +1,117 @@
 # fserver
-==以下gemini cli撰写==
 
-专为工程师设计的高性能文件服务器与数据查看器。
-以**极速**和**好品味 (Good Taste)** 为核心，拒绝繁杂，提供直观、纯粹的数据浏览体验。
+[English](README.en.md) | 中文
 
-## 核心理念 (Philosophy)
+面向工程师的轻量级文件服务器与数据查看器，提供目录浏览、文件上传、表格查看、数据导出和 Markdown 渲染。
 
-*   **Fail Fast**: 尽可能直接访问数据，拒绝过度封装。
-*   **Data Structures > Control Flow**: 通过优良的数据结构设计消除复杂的控制逻辑。
-*   **Minimalism**: 后端 FastAPI，前端原生 jQuery + DataTables，无重型框架负担。
+## 功能
 
-## 核心功能 (Features)
+### 文件管理
 
-### 📂 文件管理
-*   **极速浏览**: 像本地文件系统一样浏览远程目录。
-*   **便捷上传**: 支持直接拖拽或 API 上传文件到任意目录。
-*   **一键导出**: 将任意表格数据（TSV, CSV, JSON Lines）一键转换为 **Excel** 格式下载。
+- 浏览本地目录和文件，目录路径与 URL 直接对应。
+- 将文件拖拽或通过 API 上传到指定目录。
+- 下载原始文件。
+- 将 TSV、CSV、JSON Lines 等表格文件转换为 Excel。
 
-### 📊 数据可视化 (Tabular Viewer)
-针对 TSV/CSV/JSONL 文件的专业级查看器：
-*   **智能解析**:
-    *   自动处理 TSV/CSV 格式。
-    *   **鲁棒性**: 遇到列数不一致的“脏数据”自动启用兼容模式加载，并给出醒目提示。
-*   **强大交互**:
-    *   **服务端分页**: 轻松处理 GB 级大文件，毫秒级响应。
-    *   **全文检索**: 实时过滤当前加载的数据。
-    *   **列筛选**: 自动提取某列唯一值，支持精确过滤。
-    *   **列可见性**: 随时隐藏/显示特定列，专注关键数据。
-*   **JSON 友好**:
-    *   自动识别单元格内的 JSON 字符串。
-    *   提供**格式化**和**可折叠**的树状视图，告别黑压压的字符串堆砌。
-*   **图像预览**: 自动识别图片 URL 并直接渲染预览图。
+### 表格查看器
 
-## 快速开始 (Quick Start)
+- 支持 TSV、CSV、JSON Lines 和 XLSX。
+- 服务端分页，适合查看大型文件。
+- 按列和值搜索和筛选。
+- 隐藏或显示列。
+- 自动识别并格式化单元格中的 JSON。
+- 自动识别图片 URL 并渲染预览。
+- 对列数不规则的 TSV/CSV 启用兼容模式，并显示提示。
 
-本项目使用 `uv` 进行现代化的 Python 依赖管理。
+### Markdown 查看器
 
-### 1. 安装环境
+- 支持 GitHub 风格 Markdown、表格、代码高亮和 Mermaid 图表。
+- 自动生成目录侧边栏。
+- 目录侧边栏支持拖拽调整宽度、折叠和展开。
+- 侧边栏宽度和折叠状态会保存在浏览器 `localStorage` 中。
+- 代码块提供复制按钮。
+- 支持下载包含上述交互能力的 HTML 文件。
+
+## 快速开始
+
+项目使用 `uv` 管理 Python 依赖，需要 Python 3.12 或更高版本。
+
 ```bash
-# 安装 uv (如果尚未安装)
+# 安装 uv（如果尚未安装）
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 克隆项目并进入目录
+# 克隆项目
 git clone <repo_url>
 cd fserver
 
-# 创建虚拟环境
+# 创建并激活虚拟环境
 uv venv
-source .venv/bin/activate  # Linux/macOS
-# .venv\Scripts\activate   # Windows
+source .venv/bin/activate       # Linux/macOS
+# .venv\Scripts\activate        # Windows
 
 # 安装依赖
 uv pip install -r requirements.txt
 ```
 
-### 2. 启动服务
+启动开发服务器：
+
 ```bash
-# 开发模式启动 (支持热重载)
 uvicorn fserver:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-访问 `http://localhost:8000/list/` 开始使用。
+打开 `http://localhost:8000/list/`。
 
-## API 指南 (API Guide)
+也可以直接运行 Python 文件；这种方式默认使用 `8113` 端口：
 
-### 浏览与查看
-*   `GET /list/{path}`: 浏览目录或跳转到文件查看器。
-*   `GET /tsv/{path}`: 表格数据查看器（HTML页面）。
-    *   `start`: 起始行 (默认 0)。
-    *   `length`: 加载条数 (默认 1000)。
-    *   `key` / `value`: 按列名和值过滤。
-    *   `json_cols`: 指定需要 JSON 格式化的列（逗号分隔）。
-    *   `hide_cols`: 指定默认隐藏的列。
+```bash
+python fserver.py
+```
 
-### 数据导出
-*   `GET /excel/{path}`: 将指定文件转换为 Excel 下载。
-*   `GET /download/{path}`: 下载原始文件。
-*   `GET /txt/{path}`: 以纯文本形式查看文件。
+## API
+
+### 浏览和查看
+
+- `GET /list/{path}`：浏览目录；如果路径是文件，则跳转到对应查看器。
+- `GET /tsv/{path}`：表格查看器。
+  - `start`：起始行，默认 `0`。
+  - `length`：返回行数，默认 `1000`。
+  - `key` / `value`：按列名和值筛选。
+  - `names`：以逗号分隔的自定义列名。
+  - `header`：是否将首行作为表头。
+  - `json_cols`：需要格式化 JSON 的列。
+  - `json_link_cols`：需要渲染 JSON 链接的列。
+  - `image_cols`：需要渲染图片预览的列。
+  - `hide_cols`：默认隐藏的列。
+- `GET /md/{path}`：渲染 Markdown 文件。
+- `GET /md/{path}?download=1`：下载包含交互能力的 HTML。
+- `GET /txt/{path}`：以纯文本查看文件。
+
+### 下载和导出
+
+- `GET /download/{path}`：下载原始文件。
+- `GET /excel/{path}`：将表格文件转换为 Excel 后下载。
 
 ### 工具接口
-*   `GET /api/tsv/key/{path}`: 获取某列的所有唯一值（用于前端下拉框）。
-*   `GET /json_viewer`: 独立的 JSON 美化查看页面。
 
-## 架构说明 (Architecture)
+- `GET /api/tsv/key/{path}`：获取指定列的唯一值。
+- `GET /json_viewer`：打开独立的 JSON 格式化查看页面。
 
-*   **Backend**: Python 3.12+, FastAPI, Pandas (核心数据处理), Aiofiles (异步IO).
-*   **Caching**: 使用 `cachetools` 在内存中缓存 DataFrame，避免重复读取磁盘，大幅提升翻页和过滤速度。
-*   **Frontend**: Jinja2 模板渲染 HTML，jQuery DataTables 负责交互。利用 `dt-colresize` 和 `buttons` 扩展增强体验。
+## 架构
 
-## 待办事项 (Todo)
+- 后端：Python、FastAPI、Pandas、Aiofiles。
+- 模板：Jinja2 和原生 HTML。
+- 表格交互：jQuery DataTables 及其扩展。
+- Markdown：Python-Markdown、代码高亮、Mermaid。
+- 缓存：使用 `cachetools` 缓存已读取的 DataFrame，默认缓存 48 小时。
 
-- [ ] **性能**: 大文件加载优化（目前全量加载进内存，通过切片分页，未来计划支持流式读取）。
-- [ ] **功能**: 简单的文本文件在线编辑。
-- [ ] **部署**: Docker 镜像支持。
+## 注意事项
 
+- 文件路径相对于服务进程的当前工作目录。
+- 下载的 Markdown HTML 使用 CDN 加载 Mermaid、代码高亮和 GitHub Markdown 样式；离线环境下这些外部资源可能无法加载。
+- 当前大文件读取仍会将 DataFrame 加载到内存，超大文件建议关注进程内存使用。
+
+## 待办事项
+
+- [ ] 流式读取超大文件，降低内存占用。
+- [ ] 支持简单的文本文件在线编辑。
+- [ ] 提供 Docker 镜像。

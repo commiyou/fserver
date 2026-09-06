@@ -416,7 +416,18 @@ async def render_md(request: Request, file_path: str) -> Response:
     toc = getattr(converter, "toc", "")  # "" when no headings found
 
     parent_path = str(path.parent)
-    toc_sidebar = f'<nav class="toc-sidebar"><div class="toc-title">目录</div>{toc}</nav>' if toc.strip() and "<li>" in toc else ""
+    toc_sidebar = (
+        '<aside class="toc-sidebar" id="toc-sidebar">'
+        '<div class="toc-header">'
+        '<div class="toc-title">目录</div>'
+        '<button class="toc-sidebar-toggle" type="button" aria-label="折叠目录" title="折叠目录">收起</button>'
+        "</div>"
+        f"{toc}"
+        "</aside>"
+        '<div class="toc-resizer" id="toc-resizer" role="separator" aria-label="调整目录宽度" '
+        'aria-orientation="vertical" aria-valuemin="180" aria-valuemax="420" aria-valuenow="220" '
+        'tabindex="0" title="拖拽调整目录宽度"></div>'
+    ) if toc.strip() and "<li>" in toc else ""
     has_toc = bool(toc_sidebar)
 
     html = f"""<!DOCTYPE html>
@@ -435,6 +446,12 @@ async def render_md(request: Request, file_path: str) -> Response:
     }}
     .topbar a {{ color: #1a56a0; text-decoration: none; margin-right: 8px; }}
     .topbar a:hover {{ text-decoration: underline; }}
+    .toc-toggle {{
+      border: 1px solid #c9d1d9; border-radius: 4px; background: #fff;
+      color: #1a56a0; cursor: pointer; font-size: 12px; padding: 3px 8px;
+      margin-left: 12px;
+    }}
+    .toc-toggle:hover {{ background: #f3f6f8; }}
     .page-layout {{
       display: flex;
       max-width: {'1200px' if has_toc else '960px'};
@@ -454,7 +471,7 @@ async def render_md(request: Request, file_path: str) -> Response:
     }}
     /* TOC sidebar */
     .toc-sidebar {{
-      width: 220px;
+      width: var(--toc-width, 220px);
       flex-shrink: 0;
       background: #fff;
       border: 1px solid #dde0e4;
@@ -466,7 +483,29 @@ async def render_md(request: Request, file_path: str) -> Response:
       overflow-y: auto;
       font-size: 13px;
     }}
-    .toc-title {{ font-weight: 600; margin-bottom: 8px; color: #333; }}
+    .toc-header {{
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; margin-bottom: 8px;
+    }}
+    .toc-title {{ font-weight: 600; color: #333; }}
+    .toc-sidebar-toggle {{
+      border: 0; border-radius: 4px; background: transparent; color: #57606a;
+      cursor: pointer; font-size: 11px; padding: 3px 5px;
+    }}
+    .toc-sidebar-toggle:hover {{ background: #f3f6f8; color: #1a56a0; }}
+    .toc-resizer {{
+      align-self: stretch; flex: 0 0 8px; cursor: col-resize; position: relative;
+      margin: 0 -12px 0 -12px; z-index: 2; touch-action: none;
+    }}
+    .toc-resizer::after {{
+      content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px;
+      background: transparent; transition: background .15s;
+    }}
+    .toc-resizer:hover::after, .toc-resizer:focus::after, body.toc-resizing .toc-resizer::after {{
+      background: #8c959f;
+    }}
+    body.toc-resizing {{ cursor: col-resize; user-select: none; }}
+    .toc-collapsed .toc-sidebar, .toc-collapsed .toc-resizer {{ display: none; }}
     .toc-sidebar .toc ul {{ list-style: none; padding-left: 12px; margin: 0; }}
     .toc-sidebar .toc > ul {{ padding-left: 0; }}
     .toc-sidebar .toc li {{ margin: 4px 0; }}
@@ -488,9 +527,11 @@ async def render_md(request: Request, file_path: str) -> Response:
   <div class="topbar">
     <a href="/list/{parent_path}">&#8592; {parent_path}/</a>
     <span style="color:#555">{path.name}</span>
+    {'<button class="toc-toggle" type="button" aria-expanded="true">隐藏目录</button>' if has_toc else ''}
+    <a href="/md/{file_path}?download=1" style="margin-left:8px">下载 HTML</a>
     <a href="/download/{file_path}" style="float:right">下载</a>
   </div>
-  <div class="page-layout">
+  <div class="page-layout" id="page-layout">
     {toc_sidebar}
     <article class="markdown-body">
 {html_body}
@@ -500,6 +541,93 @@ async def render_md(request: Request, file_path: str) -> Response:
   <script>
     mermaid.initialize({{ startOnLoad: true, theme: 'default' }});
   </script>
+  <script>
+    // Keep the directory panel comfortable across sessions and viewport sizes.
+    (function() {{
+      var layout = document.getElementById('page-layout');
+      var sidebar = document.getElementById('toc-sidebar');
+      var resizer = document.getElementById('toc-resizer');
+      var toggle = document.querySelector('.toc-toggle');
+      var sidebarToggle = document.querySelector('.toc-sidebar-toggle');
+      if (!layout || !sidebar || !resizer || !toggle || !sidebarToggle) return;
+
+      var minWidth = 180;
+      var maxWidth = 420;
+      var storageKey = 'fserver-md-toc';
+      var saved = null;
+      try {{ saved = JSON.parse(localStorage.getItem(storageKey) || 'null'); }} catch (_) {{}}
+
+      function clamp(width) {{
+        return Math.max(minWidth, Math.min(maxWidth, width));
+      }}
+      function setWidth(width) {{
+        width = clamp(width);
+        layout.style.setProperty('--toc-width', width + 'px');
+        resizer.setAttribute('aria-valuenow', String(width));
+        if (saved) saved.width = width;
+        try {{ localStorage.setItem(storageKey, JSON.stringify({{ width: width, collapsed: layout.classList.contains('toc-collapsed') }})); }} catch (_) {{}}
+      }}
+      function setCollapsed(collapsed) {{
+        layout.classList.toggle('toc-collapsed', collapsed);
+        toggle.textContent = collapsed ? '显示目录' : '隐藏目录';
+        toggle.setAttribute('aria-expanded', String(!collapsed));
+        toggle.setAttribute('aria-label', collapsed ? '显示目录' : '隐藏目录');
+        sidebarToggle.textContent = collapsed ? '展开' : '收起';
+        sidebarToggle.setAttribute('aria-label', collapsed ? '展开目录' : '折叠目录');
+        try {{ localStorage.setItem(storageKey, JSON.stringify({{ width: parseInt(getComputedStyle(layout).getPropertyValue('--toc-width')) || 220, collapsed: collapsed }})); }} catch (_) {{}}
+      }}
+
+      setWidth(saved && Number.isFinite(saved.width) ? saved.width : 220);
+      setCollapsed(Boolean(saved && saved.collapsed));
+      toggle.addEventListener('click', function() {{ setCollapsed(!layout.classList.contains('toc-collapsed')); }});
+      sidebarToggle.addEventListener('click', function() {{ setCollapsed(!layout.classList.contains('toc-collapsed')); }});
+
+      var startX = 0;
+      var startWidth = 0;
+      function stopResize() {{
+        if (!document.body.classList.contains('toc-resizing')) return;
+        document.body.classList.remove('toc-resizing');
+        document.removeEventListener('pointermove', resize);
+        document.removeEventListener('pointerup', stopResize);
+        document.removeEventListener('pointercancel', stopResize);
+      }}
+      function resize(event) {{
+        setWidth(startWidth + event.clientX - startX);
+      }}
+      resizer.addEventListener('pointerdown', function(event) {{
+        if (layout.classList.contains('toc-collapsed')) return;
+        startX = event.clientX;
+        startWidth = sidebar.getBoundingClientRect().width;
+        document.body.classList.add('toc-resizing');
+        document.addEventListener('pointermove', resize);
+        document.addEventListener('pointerup', stopResize);
+        document.addEventListener('pointercancel', stopResize);
+        event.preventDefault();
+      }});
+      resizer.addEventListener('keydown', function(event) {{
+        var width = sidebar.getBoundingClientRect().width;
+        if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {{
+          setWidth(width + (event.key === 'ArrowRight' ? 10 : -10));
+          event.preventDefault();
+        }} else if (event.key === 'Enter' || event.key === ' ') {{
+          setCollapsed(!layout.classList.contains('toc-collapsed'));
+          event.preventDefault();
+        }}
+      }});
+      window.addEventListener('resize', function() {{
+        if (window.innerWidth <= 760) setCollapsed(false);
+      }});
+    }})();
+  </script>
+  <style>
+    @media (max-width: 760px) {{
+      .page-layout {{ display: block; margin: 12px auto; padding: 0 10px; }}
+      .toc-sidebar {{ width: auto; position: static; max-height: none; margin-bottom: 12px; }}
+      .toc-resizer {{ display: none; }}
+      .markdown-body {{ padding: 22px 18px; }}
+      .toc-toggle {{ margin-left: 6px; }}
+    }}
+  </style>
   <script>
     // Inject copy buttons into every <pre><code> block
     document.querySelectorAll('pre').forEach(function(pre) {{
@@ -536,7 +664,12 @@ async def render_md(request: Request, file_path: str) -> Response:
   </script>
 </body>
 </html>"""
-    return Response(content=html, media_type="text/html")
+    response = Response(content=html, media_type="text/html")
+    if request.query_params.get("download") == "1":
+        from urllib.parse import quote
+
+        response.headers["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(path.stem + '.html')}"
+    return response
 
 
 @app.get("/api/tsv/key/{file_path:path}")
