@@ -73,11 +73,33 @@ After installing the project, use `fp` to print fserver URLs for files and direc
 
 ```bash
 uv pip install -e .
+source .venv/bin/activate
 fp README.md
 fp data.tsv some-directory
 ```
 
 Markdown files print preview and interactive HTML download URLs. Tabular files print table-view and Excel URLs. Directories print only the directory listing URL.
+
+If you do not want to activate the virtual environment, invoke the executable directly:
+
+```bash
+/ssd1/youbin/src/fserver/.venv/bin/fp README.md
+```
+
+You can also use `uv run`:
+
+```bash
+uv run fp README.md
+uv run --project /ssd1/youbin/src/fserver fp /path/to/README.md
+```
+
+To invoke `fp` from any directory, add the virtual environment's `bin` directory to `PATH`:
+
+```bash
+echo 'export PATH="/ssd1/youbin/src/fserver/.venv/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+fp README.md
+```
 
 ```bash
 fp --host bddwd-acg-tge43qlalf9.bddwd.baidu.com --port 8113 README.md

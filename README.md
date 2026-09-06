@@ -73,11 +73,33 @@ python fserver.py
 
 ```bash
 uv pip install -e .
+source .venv/bin/activate
 fp README.md
 fp data.tsv some-directory
 ```
 
 Markdown 文件会输出预览和交互式 HTML 下载地址；表格文件会输出表格查看和 Excel 地址；目录只输出目录浏览地址。
+
+如果不想激活虚拟环境，也可以直接调用命令：
+
+```bash
+/ssd1/youbin/src/fserver/.venv/bin/fp README.md
+```
+
+或者使用 `uv run`：
+
+```bash
+uv run fp README.md
+uv run --project /ssd1/youbin/src/fserver fp /path/to/README.md
+```
+
+如果希望在任意目录直接输入 `fp`，可以将虚拟环境的 `bin` 目录加入 `PATH`：
+
+```bash
+echo 'export PATH="/ssd1/youbin/src/fserver/.venv/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+fp README.md
+```
 
 ```bash
 fp --host bddwd-acg-tge43qlalf9.bddwd.baidu.com --port 8113 README.md
