@@ -44,62 +44,81 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 git clone <repo_url>
 cd fserver
 
-# Create and activate a virtual environment
-uv venv
-source .venv/bin/activate       # Linux/macOS
-# .venv\Scripts\activate        # Windows
-
-# Install dependencies
-uv pip install -r requirements.txt
+# Create .venv, install dependencies, and install the current project
+uv sync
 ```
 
-Start the development server:
+### 1. Start the server
+
+Development mode (reload enabled, port `8000`):
 
 ```bash
-uvicorn fserver:app --host 0.0.0.0 --port 8000 --reload
+uv run uvicorn fserver:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 Open `http://localhost:8000/list/`.
 
-You can also run the Python file directly. That mode defaults to port `8113`:
+Simple or production-style mode (port `8113`):
 
 ```bash
-python fserver.py
+uv run python fserver.py
 ```
 
-## `fp` URL command
-
-After installing the project, use `fp` to print fserver URLs for files and directories. Input paths are always resolved to absolute paths:
+You can also use the Makefile:
 
 ```bash
-uv pip install -e .
-source .venv/bin/activate
+make install                     # Install the project and dependencies
+make run                         # Development server with reload, port 8000
+make serve                       # Run fserver.py directly, port 8113
+```
+
+Override the `make run` address or port with environment variables:
+
+```bash
+make run HOST=127.0.0.1 PORT=8113
+```
+
+### 2. Install and invoke `fp`
+
+When `uv sync` installs the current project, it creates this console-script executable from the `pyproject.toml` configuration:
+
+```text
+.venv/bin/fp
+```
+
+Check that the executable was created:
+
+```bash
+ls -l .venv/bin/fp
+```
+
+Invoke the executable directly:
+
+```bash
+.venv/bin/fp README.md
+```
+
+After activating the virtual environment, omit the path:
+
+```bash
+source .venv/bin/activate       # Linux/macOS
 fp README.md
 fp data.tsv some-directory
 ```
 
-Markdown files print preview and interactive HTML download URLs. Tabular files print table-view and Excel URLs. Directories print only the directory listing URL.
-
-If you do not want to activate the virtual environment, invoke the executable directly:
-
-```bash
-/ssd1/youbin/src/fserver/.venv/bin/fp README.md
-```
-
-You can also use `uv run`:
+Without activating the environment, use `uv run`:
 
 ```bash
 uv run fp README.md
-uv run --project /ssd1/youbin/src/fserver fp /path/to/README.md
 ```
 
-To invoke `fp` from any directory, add the virtual environment's `bin` directory to `PATH`:
+You can also use the Makefile wrapper:
 
 ```bash
-echo 'export PATH="/ssd1/youbin/src/fserver/.venv/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
-fp README.md
+make fp ARGS="README.md data.tsv"
 ```
+
+Markdown files print preview and interactive HTML download URLs. Tabular files print table-view and Excel URLs. Directories print only the directory listing URL.
 
 ```bash
 fp --host bddwd-acg-tge43qlalf9.bddwd.baidu.com --port 8113 README.md

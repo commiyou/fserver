@@ -44,62 +44,81 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 git clone <repo_url>
 cd fserver
 
-# 创建并激活虚拟环境
-uv venv
-source .venv/bin/activate       # Linux/macOS
-# .venv\Scripts\activate        # Windows
-
-# 安装依赖
-uv pip install -r requirements.txt
+# 创建 .venv，安装依赖，并安装当前项目
+uv sync
 ```
 
-启动开发服务器：
+### 1. 启动服务
+
+开发模式（热重载，端口 `8000`）：
 
 ```bash
-uvicorn fserver:app --host 0.0.0.0 --port 8000 --reload
+uv run uvicorn fserver:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 打开 `http://localhost:8000/list/`。
 
-也可以直接运行 Python 文件；这种方式默认使用 `8113` 端口：
+生产或简单运行模式（端口 `8113`）：
 
 ```bash
-python fserver.py
+uv run python fserver.py
 ```
 
-## `fp` 地址命令
-
-安装项目后可以使用 `fp` 为文件或目录生成 fserver 地址。命令始终使用输入路径的绝对路径：
+也可以使用 Makefile：
 
 ```bash
-uv pip install -e .
-source .venv/bin/activate
+make install                     # 安装项目及依赖
+make run                         # 热重载开发服务，默认端口 8000
+make serve                       # 直接运行 fserver.py，默认端口 8113
+```
+
+`make run` 的参数可以通过环境变量覆盖，例如：
+
+```bash
+make run HOST=127.0.0.1 PORT=8113
+```
+
+### 2. 安装并调用 `fp`
+
+`uv sync` 安装当前项目时，会根据 `pyproject.toml` 的脚本配置生成：
+
+```text
+.venv/bin/fp
+```
+
+确认 bin 已生成：
+
+```bash
+ls -l .venv/bin/fp
+```
+
+直接调用 bin：
+
+```bash
+.venv/bin/fp README.md
+```
+
+激活虚拟环境后，可以省略路径：
+
+```bash
+source .venv/bin/activate       # Linux/macOS
 fp README.md
 fp data.tsv some-directory
 ```
 
-Markdown 文件会输出预览和交互式 HTML 下载地址；表格文件会输出表格查看和 Excel 地址；目录只输出目录浏览地址。
-
-如果不想激活虚拟环境，也可以直接调用命令：
-
-```bash
-/ssd1/youbin/src/fserver/.venv/bin/fp README.md
-```
-
-或者使用 `uv run`：
+不激活环境时，使用 `uv run`：
 
 ```bash
 uv run fp README.md
-uv run --project /ssd1/youbin/src/fserver fp /path/to/README.md
 ```
 
-如果希望在任意目录直接输入 `fp`，可以将虚拟环境的 `bin` 目录加入 `PATH`：
+也可以通过 Makefile 调用：
 
 ```bash
-echo 'export PATH="/ssd1/youbin/src/fserver/.venv/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
-fp README.md
+make fp ARGS="README.md data.tsv"
 ```
+
+Markdown 文件会输出预览和交互式 HTML 下载地址；表格文件会输出表格查看和 Excel 地址；目录只输出目录浏览地址。
 
 ```bash
 fp --host bddwd-acg-tge43qlalf9.bddwd.baidu.com --port 8113 README.md
