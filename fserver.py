@@ -672,6 +672,13 @@ async def render_md(request: Request, file_path: str) -> Response:
     return response
 
 
+async def render_markdown_file(path: Path) -> str:
+    """Render a local Markdown file using the same document as the /md route."""
+    request = Request({"type": "http", "query_string": b""})
+    response = await render_md(request, str(path))
+    return bytes(response.body).decode("utf-8")
+
+
 @app.get("/api/tsv/key/{file_path:path}")
 async def api_tsv_key(
     request: Request,

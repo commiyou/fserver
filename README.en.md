@@ -123,9 +123,12 @@ Markdown files print preview and interactive HTML download URLs. Tabular files p
 ```bash
 fp --host bddwd-acg-tge43qlalf9.bddwd.baidu.com --port 8113 README.md
 fp --format json README.md
+fp --html README.md              # Write README.html next to README.md
 ```
 
-Override the server address with `--host`, `--port`, and `--scheme`. Defaults are the local FQDN, `8113`, and `http`.
+`--html` (also available as `--export-html`) uses the same renderer as the `/md/` page to convert each Markdown input directly to a same-name `.html` file in the source directory. An existing target is overwritten.
+
+Override the server address with `--host`, `--port`, and `--scheme`. Defaults are the local hostname, `8113`, and `http`. On macOS, the hostname comes from `socket.gethostname()` so a loopback reverse lookup cannot produce `1.0.0.127.in-addr.arpa`.
 
 ## API
 

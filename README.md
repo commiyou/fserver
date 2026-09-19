@@ -123,9 +123,12 @@ Markdown 文件会输出预览和交互式 HTML 下载地址；表格文件会�
 ```bash
 fp --host bddwd-acg-tge43qlalf9.bddwd.baidu.com --port 8113 README.md
 fp --format json README.md
+fp --html README.md              # 在 README.md 旁生成 README.html
 ```
 
-可通过 `--host`、`--port` 和 `--scheme` 覆盖服务器地址，默认值为本机 FQDN、`8113` 和 `http`。
+`--html`（别名 `--export-html`）会使用与 `/md/` 页面相同的渲染器，将每个 Markdown 输入直接转换成同目录、同名的 `.html` 文件；若目标已存在则覆盖。
+
+可通过 `--host`、`--port` 和 `--scheme` 覆盖服务器地址，默认值为本机主机名、`8113` 和 `http`。macOS 默认使用 `socket.gethostname()`，避免 `socket.getfqdn()` 将回环地址反向解析为 `1.0.0.127.in-addr.arpa`。
 
 ## API
 
