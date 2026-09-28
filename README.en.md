@@ -141,6 +141,7 @@ Override the server address with `--host`, `--port`, and `--scheme`. Defaults ar
   - `key` / `value`: Filter by column name and value.
   - `names`: Comma-separated custom column names.
   - `header`: Whether the first row is a header.
+  - `delim`: Field delimiter, defaulting to `\t`; pass `delim=,` for CSV.
   - `json_cols`: Columns to format as JSON.
   - `json_link_cols`: Columns to render as JSON links.
   - `image_cols`: Columns to render as image previews.

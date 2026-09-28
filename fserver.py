@@ -127,6 +127,7 @@ async def download_excel(
     names: Optional[str] = None,
     header: Optional[bool] = True,
     json_cols: Optional[str] = None,
+    delim: str = "\t",
 ):
     """download file as excel"""
     path = Path(file_path)
@@ -139,7 +140,7 @@ async def download_excel(
     names_list = None
     if names:
         names_list = tuple(str(x) for x in names.split(","))
-    df = read_file(file_path, names_list, header=header)
+    df = read_file(file_path, names_list, header=header, delim=delim)
 
     if df is None:
         raise HTTPException(status_code=404, detail="File not found")
@@ -181,9 +182,12 @@ def read_file(
     names_list: tuple[str, ...] | None = None,
     *,
     header: bool = True,
+    delim: str = "\t",
 ) -> DataFrame | None:
     """以file name为key load&cache文件"""
-    k = (file_path, names_list, header)
+    if not delim:
+        raise HTTPException(status_code=400, detail="delim must not be empty")
+    k = (file_path, names_list, header, delim)
     if k in cache:
         return cache[k]
     path = Path(file_path)
@@ -199,11 +203,11 @@ def read_file(
         else:
             try:
                 if names_list:
-                    df = pd.read_csv(path, sep="\t", names=list(names_list))
+                    df = pd.read_csv(path, sep=delim, names=list(names_list))
                 elif header:
-                    df = pd.read_csv(path, sep="\t")
+                    df = pd.read_csv(path, sep=delim)
                 else:
-                    df = pd.read_csv(path, sep="\t", header=None)
+                    df = pd.read_csv(path, sep=delim, header=None)
                     df.columns = [f"col{i}" for i in range(df.shape[1])]
                 # 列名中的 '.' 会被前端 DataTables 当作嵌套路径，统一替换
                 df.columns = [str(x).replace(".", "-") for x in df.columns]
@@ -212,7 +216,7 @@ def read_file(
                 # "Good Taste": Don't crash, handle the data structure as it is (a ragged matrix)
                 try:
                     with path.open("r", encoding="utf-8", errors="replace") as f:
-                        lines = [line.rstrip("\n").split("\t") for line in f]
+                        lines = [line.rstrip("\n").split(delim) for line in f]
                     
                     if not lines:
                         return None
@@ -295,13 +299,14 @@ async def read_tsv(  # noqa: PLR0917
     json_cols: Optional[str] = None,
     image_cols: Optional[str] = None,
     hide_cols: Optional[str] = None,
+    delim: str = "\t",
 ):
     """show tabluar page of tsv file using pandas display"""
     path = Path(file_path)
     if not path.is_file():
         return {"error": f"File not found: {file_path}"}
 
-    k = (file_path, tuple(names.split(",")) if names else None, header)
+    k = (file_path, tuple(names.split(",")) if names else None, header, delim)
     print(f"reload {reload}, incache {k in cache}, {file_path}")
     if reload and k in cache:
         del cache[k]
@@ -313,6 +318,7 @@ async def read_tsv(  # noqa: PLR0917
         file_path,
         names_list,
         header=header,
+        delim=delim,
     )
     if df is None:
         return {"error": "File not found or empty."}
@@ -336,6 +342,8 @@ async def read_tsv(  # noqa: PLR0917
         extra_params += f"&names={names}"
     if not header:
         extra_params += "&header=false"
+    from urllib.parse import quote
+    extra_params += f"&delim={quote(delim, safe='')}"
 
     return templates.TemplateResponse(
         "tsv.html",
@@ -356,6 +364,7 @@ async def read_tsv(  # noqa: PLR0917
             "extra_params": extra_params,
             "param_names": names or "",
             "param_header": header if header is not None else True,
+            "param_delim": delim,
             "param_json_cols": json_cols or "",
             "param_json_link_cols": json_link_cols or "",
             "param_image_cols": image_cols or "",
@@ -687,6 +696,7 @@ async def api_tsv_key(
     reload: Optional[bool] = False,
     names: Optional[str] = None,
     header: Optional[bool] = True,
+    delim: str = "\t",
 ):
     """tsv html get keys of tsv file"""
     path = Path(file_path)
@@ -694,10 +704,10 @@ async def api_tsv_key(
         return {"error": f"File not found: {file_path}"}
 
     names_list = tuple(names.split(",")) if names else None
-    if reload and (file_path, names_list, header) in cache:
-        del cache[(file_path, names_list, header)]
+    if reload and (file_path, names_list, header, delim) in cache:
+        del cache[(file_path, names_list, header, delim)]
 
-    df = read_file(file_path, names_list, header=header)
+    df = read_file(file_path, names_list, header=header, delim=delim)
     assert df is not None
     keys = df[str(key)].dropna().unique().tolist()
 
@@ -718,6 +728,7 @@ async def api_tsv(
     header: Optional[bool] = True,
     json_link_cols: Optional[str] = None,
     json_cols: Optional[str] = None,
+    delim: str = "\t",
 ):
     """return table data as json for datatables ajax call"""
     path = Path(file_path)
@@ -725,10 +736,10 @@ async def api_tsv(
         return {"error": f"File not found: {file_path}"}
 
     names_list = tuple(names.split(",")) if names else None
-    if reload and (file_path, names_list, header) in cache:
-        del cache[(file_path, names_list, header)]
+    if reload and (file_path, names_list, header, delim) in cache:
+        del cache[(file_path, names_list, header, delim)]
 
-    df = read_file(file_path, names_list, header=header)
+    df = read_file(file_path, names_list, header=header, delim=delim)
 
     if df is None:
         return {"error": "File not found."}
@@ -790,6 +801,7 @@ async def get_tsv_cell_content(
     col_index: int,
     names: Optional[str] = None,
     header: Optional[bool] = True,
+    delim: str = "\t",
 ) -> JSONResponse:
     """Retrieve raw content of a specific cell in a TSV file."""
     path = Path(file_path)
@@ -799,7 +811,7 @@ async def get_tsv_cell_content(
     names_list = tuple(names.split(",")) if names else None
 
     # Read the file with no json_cols processed to get raw content
-    df = read_file(file_path, names_list, header=header)  # Ensure raw content
+    df = read_file(file_path, names_list, header=header, delim=delim)  # Ensure raw content
 
     if df is None:
         raise HTTPException(status_code=404, detail="File not found or empty.")

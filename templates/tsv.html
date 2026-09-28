@@ -240,6 +240,7 @@
       var jsonDisplayColumnsIndices = JSON.parse('{{ json_cols | tojson }}');
       var imageColumnsIndices = JSON.parse('{{ image_cols | tojson }}');
       var hiddenColumnsIndices = JSON.parse('{{ hide_cols | tojson }}');
+      var paramDelim = {{ param_delim | tojson }};
 
       var dataTableColumns = JSON.parse(rawColumns).map(function(columnName, index) {
         var columnDef = { data: columnName };
@@ -494,6 +495,7 @@
 
         if (names)        params.push('names='         + encodeURIComponent(names));
         if (!header)      params.push('header=false');
+        params.push('delim=' + encodeURIComponent(paramDelim));
         if (jsonCols)     params.push('json_cols='      + encodeURIComponent(jsonCols));
         if (jsonLinkCols) params.push('json_link_cols=' + encodeURIComponent(jsonLinkCols));
         if (imageCols)    params.push('image_cols='     + encodeURIComponent(imageCols));

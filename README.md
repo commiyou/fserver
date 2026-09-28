@@ -141,6 +141,7 @@ fp --html README.md              # 在 README.md 旁生成 README.html
   - `key` / `value`：按列名和值筛选。
   - `names`：以逗号分隔的自定义列名。
   - `header`：是否将首行作为表头。
+  - `delim`：字段分隔符，默认 `\t`；CSV 可传 `delim=,`。
   - `json_cols`：需要格式化 JSON 的列。
   - `json_link_cols`：需要渲染 JSON 链接的列。
   - `image_cols`：需要渲染图片预览的列。
