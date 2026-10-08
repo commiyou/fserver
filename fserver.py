@@ -411,6 +411,33 @@ async def render_md(request: Request, file_path: str) -> Response:
         return f'\n<div class="mermaid">\n%%MERMAID_{len(_mermaid_blocks) - 1}%%\n</div>\n'
     content = re.sub(r'```mermaid\s*\n(.*?)```', _replace_mermaid, content, flags=re.DOTALL)
 
+    # Protect code snippets while extracting math
+    _code_placeholders: list[str] = []
+    def _hide_code(m: re.Match) -> str:
+        _code_placeholders.append(m.group(0))
+        return f'%%CODE_SNIPPET_{len(_code_placeholders) - 1}%%'
+
+    content = re.sub(r'```[\s\S]*?```', _hide_code, content)
+    content = re.sub(r'`[^`\n]+?`', _hide_code, content)
+
+    # Extract display math $$...$$
+    _math_display_blocks: list[str] = []
+    def _replace_math_display(m: re.Match) -> str:
+        _math_display_blocks.append(m.group(1))
+        return f'\n\n%%MATH_DISPLAY_{len(_math_display_blocks) - 1}%%\n\n'
+    content = re.sub(r'\$\$(.*?)\$\$', _replace_math_display, content, flags=re.DOTALL)
+
+    # Extract inline math $...$
+    _math_inline_blocks: list[str] = []
+    def _replace_math_inline(m: re.Match) -> str:
+        _math_inline_blocks.append(m.group(1))
+        return f'%%MATH_INLINE_{len(_math_inline_blocks) - 1}%%'
+    content = re.sub(r'(?<![\$\\])\$(?!\s)([^\n\$]+?)(?<!\s)\$(?!\$)', _replace_math_inline, content)
+
+    # Restore code snippets
+    for i, snippet in enumerate(_code_placeholders):
+        content = content.replace(f'%%CODE_SNIPPET_{i}%%', snippet)
+
     converter = md_lib.Markdown(
         extensions=["tables", "fenced_code", "codehilite", "toc", "nl2br"],
         extension_configs={"toc": {"title": "目录"}},
@@ -422,6 +449,24 @@ async def render_md(request: Request, file_path: str) -> Response:
         placeholder = f'%%MERMAID_{i}%%'
         html_body = html_body.replace(html_mod.escape(placeholder), block)
         html_body = html_body.replace(placeholder, block)
+
+    # Restore math blocks
+    for i, block in enumerate(_math_display_blocks):
+        ph = f'%%MATH_DISPLAY_{i}%%'
+        esc_ph = html_mod.escape(ph)
+        rep = f'<div class="math-display">$${block}$$</div>'
+        html_body = html_body.replace(f'<p>{esc_ph}</p>', rep)
+        html_body = html_body.replace(f'<p>{ph}</p>', rep)
+        html_body = html_body.replace(esc_ph, rep)
+        html_body = html_body.replace(ph, rep)
+
+    for i, block in enumerate(_math_inline_blocks):
+        ph = f'%%MATH_INLINE_{i}%%'
+        esc_ph = html_mod.escape(ph)
+        rep = f'<span class="math-inline">${block}$</span>'
+        html_body = html_body.replace(esc_ph, rep)
+        html_body = html_body.replace(ph, rep)
+
     toc = getattr(converter, "toc", "")  # "" when no headings found
 
     parent_path = str(path.parent)
@@ -447,6 +492,7 @@ async def render_md(request: Request, file_path: str) -> Response:
   <title>{path.name}</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.1/github-markdown.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
   <style>
     body {{ background: #f6f8fa; margin: 0; padding: 0; }}
     .topbar {{
@@ -549,6 +595,21 @@ async def render_md(request: Request, file_path: str) -> Response:
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.4.0/mermaid.min.js"></script>
   <script>
     mermaid.initialize({{ startOnLoad: true, theme: 'default' }});
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function() {{
+      renderMathInElement(document.body, {{
+        delimiters: [
+          {{left: '$$', right: '$$', display: true}},
+          {{left: '$', right: '$', display: false}},
+          {{left: '\\(', right: '\\)', display: false}},
+          {{left: '\\[', right: '\\]', display: true}}
+        ],
+        throwOnError: false
+      }});
+    }});
   </script>
   <script>
     // Keep the directory panel comfortable across sessions and viewport sizes.
