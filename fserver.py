@@ -394,6 +394,24 @@ async def get_txt_content(file_path: str) -> PlainTextResponse:
         raise HTTPException(status_code=500, detail=f"读取文件失败: {e}")
 
 
+_IMG_SRC_RE = re.compile(r'(<img\b[^>]*?\bsrc=)(["\'])(.*?)\2', re.IGNORECASE)
+
+
+def _rewrite_relative_img_src(html_body: str, base_dir: Path) -> str:
+    """Point relative <img src> values at /download/<absolute path>."""
+    from urllib.parse import quote, unquote, urlsplit
+
+    def _sub(m: re.Match) -> str:
+        src = html_mod.unescape(m.group(3))
+        parts = urlsplit(src)
+        if parts.scheme or parts.netloc or src.startswith(("/", "#")) or not parts.path:
+            return m.group(0)
+        target = Path(os.path.normpath(base_dir / unquote(parts.path)))
+        return f"{m.group(1)}{m.group(2)}/download/{quote(str(target))}{m.group(2)}"
+
+    return _IMG_SRC_RE.sub(_sub, html_body)
+
+
 @app.get("/md/{file_path:path}", name="render_md")
 async def render_md(request: Request, file_path: str) -> Response:
     """Render a Markdown file as HTML."""
@@ -466,6 +484,11 @@ async def render_md(request: Request, file_path: str) -> Response:
         rep = f'<span class="math-inline">${block}$</span>'
         html_body = html_body.replace(esc_ph, rep)
         html_body = html_body.replace(ph, rep)
+
+    # Relative image paths would resolve to /md/<dir>/img/x.jpg and hit this
+    # route; serve them through /download instead. Exported HTML keeps them as-is.
+    if "path" in request.scope and request.query_params.get("download") != "1":
+        html_body = _rewrite_relative_img_src(html_body, path.resolve().parent)
 
     toc = getattr(converter, "toc", "")  # "" when no headings found
 
@@ -697,6 +720,18 @@ async def render_md(request: Request, file_path: str) -> Response:
       .markdown-body {{ padding: 22px 18px; }}
       .toc-toggle {{ margin-left: 6px; }}
     }}
+    /* Images: keep thumbnails readable in narrow table cells; click to enlarge */
+    .markdown-body img {{ cursor: zoom-in; }}
+    .img-lightbox {{
+      position: fixed; inset: 0; z-index: 1000; display: none;
+      align-items: center; justify-content: center;
+      background: rgba(0, 0, 0, 0.82); cursor: zoom-out;
+    }}
+    .img-lightbox.open {{ display: flex; }}
+    .img-lightbox img {{
+      max-width: 94vw; max-height: 94vh; background: #fff;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5); cursor: zoom-out;
+    }}
   </style>
   <script>
     // Inject copy buttons into every <pre><code> block
@@ -731,6 +766,40 @@ async def render_md(request: Request, file_path: str) -> Response:
         }}
       }});
     }});
+  </script>
+  <script>
+    // Images: enforce a minimum display size (never above natural size) and
+    // open a lightbox on click. A following "原图" link is used as the large
+    // version when it loads; otherwise the local image is shown.
+    (function() {{
+      var MIN_W = 140;
+      var imgs = document.querySelectorAll('.markdown-body img');
+      function applyMin(img) {{
+        if (img.naturalWidth > 48) img.style.minWidth = Math.min(img.naturalWidth, MIN_W) + 'px';
+      }}
+      var box = document.createElement('div');
+      box.className = 'img-lightbox';
+      var big = document.createElement('img');
+      box.appendChild(big);
+      document.body.appendChild(box);
+      function close() {{ box.classList.remove('open'); big.removeAttribute('src'); }}
+      box.addEventListener('click', close);
+      document.addEventListener('keydown', function(e) {{ if (e.key === 'Escape') close(); }});
+      imgs.forEach(function(img) {{
+        if (img.complete) applyMin(img); else img.addEventListener('load', function() {{ applyMin(img); }});
+        img.addEventListener('click', function(e) {{
+          e.preventDefault();
+          big.src = img.currentSrc || img.src;
+          box.classList.add('open');
+          var a = img.nextElementSibling;
+          if (a && a.tagName === 'A' && a.textContent.indexOf('原图') !== -1) {{
+            var hi = new Image();
+            hi.onload = function() {{ if (box.classList.contains('open')) big.src = hi.src; }};
+            hi.src = a.href;
+          }}
+        }});
+      }});
+    }})();
   </script>
 </body>
 </html>"""
