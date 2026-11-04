@@ -16,6 +16,7 @@ dependencies = [
     "uvicorn>=0.34.3",
     "markdown>=3.7",
     "openpyxl>=3.1.5",
+    "pymdown-extensions>=12.3",
 ]
 
 [project.scripts]

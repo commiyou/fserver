@@ -412,6 +412,36 @@ def _rewrite_relative_img_src(html_body: str, base_dir: Path) -> str:
     return _IMG_SRC_RE.sub(_sub, html_body)
 
 
+def _mermaid_fence(source, language, css_class, options, md, **kwargs):
+    """Emit mermaid source as escaped text; mermaid.js reads it from its HTML-decoded text."""
+    return f'<div class="mermaid">{html_mod.escape(source)}</div>'
+
+
+def _new_md_converter() -> md_lib.Markdown:
+    """Markdown converter: math, mermaid and code are separated at parse time."""
+    return md_lib.Markdown(
+        extensions=[
+            "tables",
+            "pymdownx.highlight",
+            "toc",
+            "nl2br",
+            "pymdownx.superfences",
+            "pymdownx.arithmatex",
+        ],
+        extension_configs={
+            "toc": {"title": "目录"},
+            # Same markup/CSS hook as the previous codehilite extension.
+            "pymdownx.highlight": {"css_class": "codehilite"},
+            "pymdownx.superfences": {
+                "custom_fences": [
+                    {"name": "mermaid", "class": "mermaid", "format": _mermaid_fence},
+                ],
+            },
+            "pymdownx.arithmatex": {"generic": True},
+        },
+    )
+
+
 @app.get("/md/{file_path:path}", name="render_md")
 async def render_md(request: Request, file_path: str) -> Response:
     """Render a Markdown file as HTML."""
@@ -422,68 +452,8 @@ async def render_md(request: Request, file_path: str) -> Response:
     async with aiofiles.open(path, encoding="utf-8") as f:
         content = await f.read()
 
-    # Extract mermaid blocks before markdown conversion to prevent codehilite mangling
-    _mermaid_blocks: list[str] = []
-    def _replace_mermaid(m: re.Match) -> str:
-        _mermaid_blocks.append(m.group(1))
-        return f'\n<div class="mermaid">\n%%MERMAID_{len(_mermaid_blocks) - 1}%%\n</div>\n'
-    content = re.sub(r'```mermaid\s*\n(.*?)```', _replace_mermaid, content, flags=re.DOTALL)
-
-    # Protect code snippets while extracting math
-    _code_placeholders: list[str] = []
-    def _hide_code(m: re.Match) -> str:
-        _code_placeholders.append(m.group(0))
-        return f'%%CODE_SNIPPET_{len(_code_placeholders) - 1}%%'
-
-    content = re.sub(r'```[\s\S]*?```', _hide_code, content)
-    content = re.sub(r'`[^`\n]+?`', _hide_code, content)
-
-    # Extract display math $$...$$
-    _math_display_blocks: list[str] = []
-    def _replace_math_display(m: re.Match) -> str:
-        _math_display_blocks.append(m.group(1))
-        return f'\n\n%%MATH_DISPLAY_{len(_math_display_blocks) - 1}%%\n\n'
-    content = re.sub(r'\$\$(.*?)\$\$', _replace_math_display, content, flags=re.DOTALL)
-
-    # Extract inline math $...$
-    _math_inline_blocks: list[str] = []
-    def _replace_math_inline(m: re.Match) -> str:
-        _math_inline_blocks.append(m.group(1))
-        return f'%%MATH_INLINE_{len(_math_inline_blocks) - 1}%%'
-    content = re.sub(r'(?<![\$\\])\$(?!\s)([^\n\$]+?)(?<!\s)\$(?!\$)', _replace_math_inline, content)
-
-    # Restore code snippets
-    for i, snippet in enumerate(_code_placeholders):
-        content = content.replace(f'%%CODE_SNIPPET_{i}%%', snippet)
-
-    converter = md_lib.Markdown(
-        extensions=["tables", "fenced_code", "codehilite", "toc", "nl2br"],
-        extension_configs={"toc": {"title": "目录"}},
-    )
+    converter = _new_md_converter()
     html_body = converter.convert(content)
-
-    # Restore mermaid content as raw text (mermaid.js parses it directly)
-    for i, block in enumerate(_mermaid_blocks):
-        placeholder = f'%%MERMAID_{i}%%'
-        html_body = html_body.replace(html_mod.escape(placeholder), block)
-        html_body = html_body.replace(placeholder, block)
-
-    # Restore math blocks
-    for i, block in enumerate(_math_display_blocks):
-        ph = f'%%MATH_DISPLAY_{i}%%'
-        esc_ph = html_mod.escape(ph)
-        rep = f'<div class="math-display">$${block}$$</div>'
-        html_body = html_body.replace(f'<p>{esc_ph}</p>', rep)
-        html_body = html_body.replace(f'<p>{ph}</p>', rep)
-        html_body = html_body.replace(esc_ph, rep)
-        html_body = html_body.replace(ph, rep)
-
-    for i, block in enumerate(_math_inline_blocks):
-        ph = f'%%MATH_INLINE_{i}%%'
-        esc_ph = html_mod.escape(ph)
-        rep = f'<span class="math-inline">${block}$</span>'
-        html_body = html_body.replace(esc_ph, rep)
-        html_body = html_body.replace(ph, rep)
 
     # Relative image paths would resolve to /md/<dir>/img/x.jpg and hit this
     # route; serve them through /download instead. Exported HTML keeps them as-is.
@@ -599,6 +569,27 @@ async def render_md(request: Request, file_path: str) -> Response:
     }}
     .code-wrapper:hover .copy-btn {{ opacity: 1; }}
     .copy-btn.copied {{ background: #d4edda; border-color: #97c8a0; color: #2d6a4f; }}
+    .markdown-body .mermaid svg {{ cursor: zoom-in; }}
+    .mm-modal {{
+      position: fixed; inset: 0; z-index: 1000; display: none;
+      background: rgba(0,0,0,0.55);
+    }}
+    .mm-modal.open {{ display: block; }}
+    .mm-stage {{
+      position: absolute; inset: 40px; background: #fff; border-radius: 8px;
+      overflow: hidden; cursor: grab; touch-action: none;
+    }}
+    .mm-stage.dragging {{ cursor: grabbing; }}
+    .mm-canvas {{ position: absolute; left: 0; top: 0; transform-origin: 0 0; }}
+    .mm-canvas svg {{ max-width: none !important; display: block; }}
+    .mm-tools {{
+      position: absolute; top: 48px; right: 52px; z-index: 1; display: flex; gap: 6px;
+    }}
+    .mm-tools button {{
+      min-width: 34px; height: 30px; border: 1px solid #ccc; border-radius: 4px;
+      background: #fff; cursor: pointer; font-size: 14px;
+    }}
+    .mm-tools .mm-scale {{ align-self: center; min-width: 48px; text-align: center; font-size: 12px; color: #555; }}
   </style>
 </head>
 <body>
@@ -619,19 +610,130 @@ async def render_md(request: Request, file_path: str) -> Response:
   <script>
     mermaid.initialize({{ startOnLoad: true, theme: 'default' }});
   </script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+  <div class="mm-modal" id="mm-modal" aria-hidden="true">
+    <div class="mm-tools">
+      <button type="button" data-mm="out" title="缩小">−</button>
+      <span class="mm-scale" id="mm-scale">100%</span>
+      <button type="button" data-mm="in" title="放大">+</button>
+      <button type="button" data-mm="fit" title="适应窗口">适应</button>
+      <button type="button" data-mm="close" title="关闭 (Esc)">✕</button>
+    </div>
+    <div class="mm-stage" id="mm-stage"><div class="mm-canvas" id="mm-canvas"></div></div>
+  </div>
   <script>
-    document.addEventListener("DOMContentLoaded", function() {{
-      renderMathInElement(document.body, {{
-        delimiters: [
-          {{left: '$$', right: '$$', display: true}},
-          {{left: '$', right: '$', display: false}},
-          {{left: '\\(', right: '\\)', display: false}},
-          {{left: '\\[', right: '\\]', display: true}}
-        ],
-        throwOnError: false
+    // Click a rendered mermaid diagram to open it in a zoom/pan viewer.
+    (function() {{
+      var modal = document.getElementById('mm-modal');
+      var stage = document.getElementById('mm-stage');
+      var canvas = document.getElementById('mm-canvas');
+      var scaleLabel = document.getElementById('mm-scale');
+      var s = 1, x = 0, y = 0, baseW = 0, baseH = 0;
+
+      function apply() {{
+        canvas.style.transform = 'translate(' + x + 'px,' + y + 'px) scale(' + s + ')';
+        scaleLabel.textContent = Math.round(s * 100) + '%';
+      }}
+      function zoomAt(factor, cx, cy) {{
+        var ns = Math.min(20, Math.max(0.1, s * factor));
+        x = cx - (cx - x) * ns / s;
+        y = cy - (cy - y) * ns / s;
+        s = ns;
+        apply();
+      }}
+      function fit() {{
+        var w = stage.clientWidth, h = stage.clientHeight;
+        s = Math.min(w / baseW, h / baseH) * 0.95;
+        x = (w - baseW * s) / 2;
+        y = (h - baseH * s) / 2;
+        apply();
+      }}
+      function open(svg) {{
+        // Use the diagram's natural size (viewBox) so 100% means 1:1.
+        var vb = svg.viewBox && svg.viewBox.baseVal;
+        var box = (vb && vb.width) ? vb : svg.getBoundingClientRect();
+        var clone = svg.cloneNode(true);
+        clone.removeAttribute('style');
+        baseW = box.width || 800;
+        baseH = box.height || 600;
+        clone.setAttribute('width', baseW);
+        clone.setAttribute('height', baseH);
+        canvas.innerHTML = '';
+        canvas.appendChild(clone);
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+        fit();
+      }}
+      function close() {{
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+        canvas.innerHTML = '';
+      }}
+
+      document.addEventListener('click', function(e) {{
+        var svg = e.target.closest && e.target.closest('.markdown-body .mermaid svg');
+        if (svg) open(svg);
       }});
+      modal.addEventListener('click', function(e) {{
+        var btn = e.target.closest('button[data-mm]');
+        if (btn) {{
+          var act = btn.getAttribute('data-mm');
+          var cx = stage.clientWidth / 2, cy = stage.clientHeight / 2;
+          if (act === 'in') zoomAt(1.25, cx, cy);
+          else if (act === 'out') zoomAt(0.8, cx, cy);
+          else if (act === 'fit') fit();
+          else close();
+        }} else if (e.target === modal) {{
+          close();
+        }}
+      }});
+      document.addEventListener('keydown', function(e) {{
+        if (!modal.classList.contains('open')) return;
+        if (e.key === 'Escape') close();
+        else if (e.key === '+' || e.key === '=') zoomAt(1.25, stage.clientWidth / 2, stage.clientHeight / 2);
+        else if (e.key === '-') zoomAt(0.8, stage.clientWidth / 2, stage.clientHeight / 2);
+        else if (e.key === '0') fit();
+      }});
+      stage.addEventListener('wheel', function(e) {{
+        e.preventDefault();
+        var r = stage.getBoundingClientRect();
+        zoomAt(Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top);
+      }}, {{ passive: false }});
+
+      var dragId = null, lastX = 0, lastY = 0;
+      stage.addEventListener('pointerdown', function(e) {{
+        dragId = e.pointerId; lastX = e.clientX; lastY = e.clientY;
+        stage.setPointerCapture(dragId);
+        stage.classList.add('dragging');
+      }});
+      stage.addEventListener('pointermove', function(e) {{
+        if (e.pointerId !== dragId) return;
+        x += e.clientX - lastX; y += e.clientY - lastY;
+        lastX = e.clientX; lastY = e.clientY;
+        apply();
+      }});
+      function endDrag(e) {{
+        if (e.pointerId !== dragId) return;
+        dragId = null;
+        stage.classList.remove('dragging');
+      }}
+      stage.addEventListener('pointerup', endDrag);
+      stage.addEventListener('pointercancel', endDrag);
+      stage.addEventListener('dblclick', fit);
+    }})();
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+  <script>
+    // Math was identified by the Markdown parser (pymdownx.arithmatex); only
+    // render those elements so mermaid and code blocks are never touched.
+    document.querySelectorAll('.arithmatex').forEach(function(el) {{
+      var tex = el.textContent.trim();
+      var display = el.tagName === 'DIV';
+      tex = tex.replace(/^\\\\[\\[(]/, '').replace(/\\\\[\\])]$/, '');
+      try {{
+        katex.render(tex, el, {{ displayMode: display, throwOnError: false }});
+      }} catch (_) {{}}
     }});
   </script>
   <script>
