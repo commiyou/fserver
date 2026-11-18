@@ -1,597 +1,759 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>表格 {{name}}</title>
 
-    <title>TSV {{name}}</title>
-
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@3.3.7/dist/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
-
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-dt@2.0.3/css/dataTables.dataTables.min.css" />
-    <link rel="stylesheet" href="https://cdn.datatables.net/buttons/3.0.1/css/buttons.dataTables.min.css" />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jquery.json-viewer@1.5.0/json-viewer/jquery.json-viewer.css" />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dt-colresize@2.0.4/css/dataTables.colResize.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tabulator-tables@6.7.1/dist/css/tabulator.min.css">
     <style>
-    body {
-      padding: 20px;
-    }
-    .form-group {
-      margin-bottom: 20px;
-    }
-    .form-control {
-      width: auto;
+    :root {
+      --page-gutter: 20px;
+      --border: #d9dee4;
+      --text: #24292f;
+      --muted: #667085;
+      --accent: #1a56a0;
     }
 
-    table.dataTable td {
-      vertical-align: top;
+    html,
+    body {
+      max-width: 100%;
     }
-    table.dataTable td,
-    table.dataTable th {
-      -webkit-box-sizing: content-box;
-      -moz-box-sizing: content-box;
-      box-sizing: content-box;
-      /* max-height: 200px; */ /* Adjust as needed */
-      /* overflow: auto; */
+
+    body {
+      margin: 0;
+      padding: 0;
+      overflow-x: hidden;
+      background: #f5f6f8;
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 13px;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    .page {
+      width: 100%;
+      max-width: 100%;
+      padding: 12px var(--page-gutter) 24px;
+      box-sizing: border-box;
+    }
+
+    .page-header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      background: rgba(255, 255, 255, 0.97);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      box-shadow: 0 3px 12px rgba(0, 0, 0, 0.08);
+      backdrop-filter: blur(8px);
+    }
+
+    .heading {
+      display: flex;
+      flex: 1 1 360px;
+      align-items: center;
+      min-width: 0;
+      gap: 10px;
+    }
+
+    .heading-icon {
+      flex: 0 0 auto;
+      color: var(--accent);
+      font-size: 18px;
+    }
+
+    .heading-main {
+      min-width: 0;
+    }
+
+    .heading-title {
+      overflow: hidden;
+      margin: 0;
+      font-size: 19px;
+      line-height: 1.35;
+      text-overflow: ellipsis;
       white-space: nowrap;
     }
-    .json-cell {
+
+    .heading-meta {
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .actions {
+      display: flex;
+      flex: 0 0 auto;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 6px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 32px;
+      padding: 6px 10px;
+      color: var(--text);
+      background: #fff;
+      border: 1px solid #c8ced6;
+      border-radius: 5px;
+      box-sizing: border-box;
+      text-decoration: none;
       cursor: pointer;
-      /* color: #337ab7; */ /* Bootstrap's link color */
-      /* text-decoration: underline; */
-      font-style: italic;
-    }
-    .json-display-cell {
-      white-space: pre-wrap; /* Allow wrapping inside JSON */
-      word-wrap: break-word;
-      min-width: 300px; /* Give it some space when expanded */
-      padding-left: 20px !important; /* Fix arrow overlap */
-    }
-    
-    .json-controls {
-        margin-bottom: 5px;
-        font-size: 0.85em;
-    }
-    .json-controls a {
-        cursor: pointer;
-        margin-right: 10px;
-        text-decoration: none;
-        color: #337ab7;
-    }
-    .json-controls a:hover {
-        text-decoration: underline;
     }
 
-    /* JSON Viewer Tweaks */
-    ul.json-dict, ol.json-array {
-        list-style-type: none;
-        margin: 0;
-        padding-left: 10px;
-        border-left: 1px dotted #ccc;
-    }
-    .json-string {
-        color: #0B7500;
-    }
-    .json-literal {
-        color: #1A01CC;
-        font-weight: bold;
+    .button:hover {
+      color: var(--accent);
+      border-color: var(--accent);
     }
 
-    #tsvTable {
-      /* table-layout: fixed; */
+    .button.primary {
+      color: #fff;
+      background: #1f7a4f;
+      border-color: #176640;
     }
-    .help-label {
-        border-bottom: 1px dotted #999;
-        cursor: help;
+
+    .button.primary:hover {
+      color: #fff;
+      background: #176640;
+    }
+
+    .alert {
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      color: #6b4e00;
+      background: #fff8db;
+      border: 1px solid #f0d36d;
+      border-radius: 6px;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px 16px;
+      padding: 9px 12px;
+      margin-bottom: 10px;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+    }
+
+    .toolbar-group {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .toolbar label {
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .control {
+      height: 30px;
+      padding: 4px 8px;
+      color: var(--text);
+      background: #fff;
+      border: 1px solid #c8ced6;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+
+    #key {
+      max-width: 150px;
+    }
+
+    #value {
+      width: min(220px, 32vw);
+    }
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 0 2px 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    #tsv-table {
+      width: 100%;
+      min-height: 320px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.07);
+    }
+
+    .tabulator {
+      background: #fff;
+      border: 0;
+      font-size: 13px;
+    }
+
+    .tabulator .tabulator-header {
+      color: #344054;
+      background: #f8f9fa;
+      border-bottom: 1px solid #cfd5dc;
+    }
+
+    .tabulator .tabulator-header .tabulator-col {
+      background: #f8f9fa;
+    }
+
+    .tabulator .tabulator-header .tabulator-col.tabulator-frozen {
+      background: #f1f5f9;
+    }
+
+    .tabulator .tabulator-row:hover {
+      background: #f4f8ff;
+    }
+
+    .tabulator .tabulator-cell {
+      padding: 7px 8px;
+    }
+
+    .json-cell summary {
+      color: var(--accent);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .json-cell pre {
+      max-width: 480px;
+      max-height: 220px;
+      margin: 6px 0 0;
+      padding: 8px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #f6f8fa;
+      border: 1px solid #d8dee4;
+      border-radius: 4px;
+    }
+
+    .image-cell img {
+      display: block;
+      width: auto;
+      height: 88px;
+      max-width: 180px;
+      object-fit: contain;
+    }
+
+    .column-picker {
+      position: fixed;
+      top: 64px;
+      right: var(--page-gutter);
+      z-index: 200;
+      display: none;
+      width: min(300px, calc(100vw - 32px));
+      max-height: min(65vh, 520px);
+      overflow: auto;
+      background: #fff;
+      border: 1px solid #c8ced6;
+      border-radius: 7px;
+      box-shadow: 0 10px 35px rgba(0, 0, 0, 0.18);
+    }
+
+    .column-picker.open {
+      display: block;
+    }
+
+    .column-picker-head {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 9px 10px;
+      background: #f8f9fa;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+    }
+
+    .column-picker-list {
+      padding: 6px 10px 10px;
+    }
+
+    .column-picker label {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 2px;
+      cursor: pointer;
+    }
+
+    .column-picker input {
+      margin: 0;
+    }
+
+    @media (max-width: 767px) {
+      :root {
+        --page-gutter: 8px;
+      }
+
+      .page {
+        padding-top: 8px;
+      }
+
+      .page-header {
+        align-items: flex-start;
+        gap: 8px;
+        padding: 8px;
+      }
+
+      .heading-title {
+        font-size: 17px;
+      }
+
+      .heading-meta,
+      .button-label {
+        display: none;
+      }
+
+      .button {
+        padding: 6px 8px;
+      }
+
+      .toolbar {
+        align-items: stretch;
+        padding: 8px;
+      }
+
+      .toolbar-group {
+        width: 100%;
+      }
+
+      #key {
+        max-width: 120px;
+      }
+
+      #value {
+        flex: 1 1 150px;
+      }
+
+      #tsv-table {
+        min-height: 260px;
+      }
+
+      .column-picker {
+        top: 58px;
+      }
     }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/datatables.net@2.0.3/js/dataTables.min.js"></script>
-    <script src="https://cdn.datatables.net/buttons/3.0.1/js/dataTables.buttons.min.js"></script>
-    <script src="https://cdn.datatables.net/buttons/3.0.1/js/buttons.colVis.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/jquery.json-viewer@1.5.0/json-viewer/jquery.json-viewer.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dt-colresize@2.0.4/js/dataTables.colResize.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@3.3.7/dist/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
   </head>
   <body>
-    <div class="container-fluid" style="padding: 15px 30px;">
-      <!-- Warning Alert -->
+    <main class="page">
       {% if warning_msg %}
-      <div class="alert alert-warning alert-dismissible" role="alert" style="margin-bottom: 15px; border-left: 5px solid #ffcc00;">
-        <button type="button" class="close" data-dismiss="alert" aria-label="Close"><span aria-hidden="true">&times;</span></button>
-        <strong>文件格式警告:</strong> {{ warning_msg }}
+      <div class="alert">
+        <strong>文件格式警告：</strong>{{ warning_msg }}
       </div>
       {% endif %}
 
-      <!-- Page Header & Actions -->
-      <div class="page-header" style="margin-top: 0; padding-bottom: 10px; border-bottom: 1px solid #eee;">
-        <div class="row">
-            <div class="col-md-8">
-                <h3 style="margin: 0; line-height: 1.4;">
-                    <span class="glyphicon glyphicon-list-alt text-primary" style="margin-right: 10px;"></span>
-                    <span style="font-weight: 600;">{{name}}</span>
-                    <small class="text-muted" style="margin-left: 15px; font-size: 0.6em; vertical-align: middle;">
-                        <span class="glyphicon glyphicon-align-justify"></span> 文件共 {{recordsTotal}} 条，本次加载 {{ length if length > 0 else '全部' }} 条
-                    </small>
-                </h3>
+      <header class="page-header">
+        <div class="heading">
+          <span class="heading-icon">▦</span>
+          <div class="heading-main">
+            <h1 class="heading-title" title="{{name}}">{{name}}</h1>
+            <div class="heading-meta">
+              共 {{recordsTotal}} 条，本次加载 {{ length if length > 0 else '全部' }} 条 · Tabulator
             </div>
-            <div class="col-md-4 text-right">
-                <a class="btn btn-default shadow-sm" href="/list/{{parent_path}}" style="font-weight: bold; padding: 8px 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.15); margin-right: 5px;" title="返回上一级文件夹目录">
-                    <span class="glyphicon glyphicon-folder-open"></span> 打开文件夹
-                </a>
-                <a class="btn btn-default shadow-sm" href="?{{ request.url.query }}&reload=true" title="强制从磁盘重新加载，清除缓存" style="padding: 8px 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.15); margin-right: 5px;">
-                    <span class="glyphicon glyphicon-refresh"></span>
-                </a>
-                <button class="btn btn-default shadow-sm" data-toggle="modal" data-target="#settingsModal" title="列显示设置" style="padding: 8px 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.15); margin-right: 5px;">
-                    <span class="glyphicon glyphicon-cog"></span>
-                </button>
-                <a class="btn btn-success shadow-sm" href="/excel/{{path}}?{{ request.url.query }}" target="_blank" style="font-weight: bold; padding: 8px 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.15);">
-                    <span class="glyphicon glyphicon-download-alt"></span> 导出 Excel
-                </a>
-            </div>
+          </div>
         </div>
+        <div class="actions">
+          <a class="button" href="/list/{{parent_path}}" title="打开所在文件夹">
+            <span>📁</span><span class="button-label">打开文件夹</span>
+          </a>
+          <button class="button copy-path-button" type="button" data-copy-path="{{ copy_path }}" title="{{ copy_path }}">
+            <span>⧉</span><span class="button-label">复制路径</span>
+          </button>
+          <a class="button" href="?{{ request.url.query }}&reload=true" title="从磁盘重新加载">
+            <span>↻</span>
+          </a>
+          <button class="button" type="button" id="column-picker-button" title="选择显示列">
+            <span>☷</span><span class="button-label">列显示</span>
+          </button>
+          <a class="button primary" href="/excel/{{path}}?{{ request.url.query }}" target="_blank" title="导出 Excel">
+            <span>⇩</span><span class="button-label">导出 Excel</span>
+          </a>
+        </div>
+      </header>
+
+      <section class="toolbar">
+        <div class="toolbar-group">
+          <label for="search">全文检索</label>
+          <input class="control" type="search" id="search" placeholder="过滤当前加载的数据…">
+        </div>
+        <div class="toolbar-group">
+          <label for="key">筛选列</label>
+          <select class="control" id="key">
+            <option value="">全部</option>
+            {% for column in columns %}
+            <option value="{{column}}">{{column}}</option>
+            {% endfor %}
+          </select>
+          <input class="control" list="key-values" id="value" placeholder="输入或选择值…">
+          <datalist id="key-values"></datalist>
+        </div>
+        <div class="toolbar-group">
+          <label for="load-length">加载条数</label>
+          <select class="control" id="load-length">
+            <option value="500" selected>500</option>
+            <option value="1000">1,000</option>
+            <option value="5000">5,000</option>
+            <option value="10000">10,000</option>
+            <option value="-1">全部</option>
+          </select>
+          <button class="button" type="button" id="apply-key-filter">应用</button>
+          <button class="button" type="button" id="reset-layout" title="清除保存的列宽、列可见性和排序">重置布局</button>
+        </div>
+      </section>
+
+      <div class="status-bar">
+        <span id="table-status">正在加载…</span>
+        <span>拖动表头边缘调整列宽；宽表在网格内部横向滚动。</span>
       </div>
 
-      <!-- Controls Toolbar -->
-      <div class="well well-sm" style="background-color: #f8f9fa; border: 1px solid #e9ecef; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-        <div class="row">
-            
-            <!-- LEFT: Data Filter & Navigation -->
-            <div class="col-md-7">
-                <form class="form-inline">
-                    <div class="form-group">
-                        <label for="key" class="text-muted small help-label" style="text-transform: uppercase; font-weight: bold; margin-right: 5px;" title="选择一列进行精确匹配。选中后，系统将扫描全文件并列出该列所有的唯一值供选择。">筛选列</label>
-                        <select class="form-control input-sm" id="key" style="max-width: 150px;">
-                            <option value="">-- 全部 --</option>
-                            {% for column in columns %}
-                            <option value="{{column}}">{{ column }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-
-                    <!-- Dynamic Value Controls -->
-                    <div class="form-group" style="margin-left: 15px;">
-                        <!-- Prev Value Link -->
-                        <a id="prev-value" class="btn btn-default btn-sm text-primary" href="#" style="display:none; margin-right: 5px;" title="上一个唯一值"></a>
-                        
-                        <div class="input-group input-group-sm">
-                            <span class="input-group-addon"><i class="glyphicon glyphicon-search"></i></span>
-                            <input list="value" id="input-value" class="form-control" placeholder="输入或选择..." style="min-width: 160px;" title="在此输入或选择一个特定值，系统将只显示该列等于此值的行。支持全文件检索。">
-                        </div>
-                        <datalist id="value"></datalist>
-
-                        <!-- Next Value Link -->
-                        <a id="next-value" class="btn btn-default btn-sm text-primary" href="#" style="display:none; margin-left: 5px;" title="下一个唯一值"></a>
-                        
-                        <span id="label-value" class="text-info small" style="margin-left: 8px; font-weight: bold;"></span>
-                    </div>
-                </form>
-            </div>
-
-            <!-- RIGHT: Pagination -->
-            <div class="col-md-5 text-right">
-                <form class="form-inline">
-                    <div class="form-group">
-                        <label for="length" class="text-muted small help-label" style="margin-right: 5px;" title="限制单次请求从服务器加载的最大行数。数据量过大时建议使用较小的值以提高响应速度。">加载条数</label>
-                        <select class="form-control input-sm" id="length" style="width: 70px;">
-                            <option value="500" selected="true">500</option>
-                            <option value="1000">1k</option>
-                            <option value="5000">5k</option>
-                            <option value="10000">10k</option>
-                            <option value="-1">All</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group" style="margin-left: 10px;">
-                         <div class="btn-group btn-group-sm">
-                            <a class="btn btn-default" id="previous" href="#" title="跳转到上一组数据（跨度为上方设置的每页行数）">
-                                <i class="glyphicon glyphicon-chevron-left"></i>
-                            </a>
-                            <div class="btn btn-default disabled" style="cursor: default; background: #fff; color: #333; min-width: 80px;" title="当前数据显示的起始行索引">
-                                <span class="text-muted">起始行:</span> <span id="start" style="font-weight:bold; color: #000;">{{start}}</span>
-                            </div>
-                            <a class="btn btn-default" id="next" href="#" title="跳转到下一组数据（跨度为上方设置的每页行数）">
-                                <i class="glyphicon glyphicon-chevron-right"></i>
-                            </a>
-                         </div>
-                    </div>
-
-                     <div class="form-group" style="margin-left: 5px;">
-                        <div class="input-group input-group-sm" style="width: 100px;">
-                            <input type="number" id="input-start" value="{{start}}" class="form-control" placeholder="行号" title="直接输入想要跳转的起始行号并按回车或点击Go">
-                            <span class="input-group-btn">
-                                <button class="btn btn-default" type="button" onclick="$('#input-start').trigger($.Event('keypress', {which: 13}));">Go</button>
-                            </span>
-                        </div>
-                    </div>
-                </form>
-            </div>
-
+      <div class="column-picker" id="column-picker">
+        <div class="column-picker-head">
+          <span>显示列</span>
+          <button class="button" type="button" id="column-picker-close">关闭</button>
         </div>
+        <div class="column-picker-list" id="column-picker-list"></div>
       </div>
-    </div>
-    <div style="overflow-x: auto;">
-    <table id="tsvTable" class="display compact hover">
-      <thead>
-        <tr>
-          {% for column in columns %}
-          <th>{{ column }}</th>
-          {% endfor %}
-        </tr>
 
-      </thead>
-      <tbody>
-      </tbody>
-    </table>
-    </div>
+      <div id="tsv-table"></div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/tabulator-tables@6.7.1/dist/js/tabulator.min.js"></script>
     <script>
-    $(document).ready(function() {
-      // Initialize tooltips
-      $('[title]').tooltip();
-      
-      var start = parseInt($('#start').text());
-      var length = parseInt($('#length').val());
-      var extraParams = '{{ extra_params | safe }}';
+    (function() {
+      "use strict";
 
-      // Get columns from Jinja2 as JSON string and parse it
-      var rawColumns = '{{ columns | tojson }}';
-      var jsonLinkColumnsIndices = JSON.parse('{{ json_link_cols | tojson }}');
-      var jsonDisplayColumnsIndices = JSON.parse('{{ json_cols | tojson }}');
-      var imageColumnsIndices = JSON.parse('{{ image_cols | tojson }}');
-      var hiddenColumnsIndices = JSON.parse('{{ hide_cols | tojson }}');
-      var paramDelim = {{ param_delim | tojson }};
-
-      var dataTableColumns = JSON.parse(rawColumns).map(function(columnName, index) {
-        var columnDef = { data: columnName };
-        
-        if (hiddenColumnsIndices.includes(index)) {
-            columnDef.visible = false;
-        }
-
-        if (jsonLinkColumnsIndices.includes(index)) {
-          columnDef.createdCell = function(td, cellData, rowData, row, col) {
-            $(td).addClass('json-cell');
-            $(td).on('click', function() {
-              var encodedContent = encodeURIComponent(cellData);
-              window.open('/json_viewer?content=' + encodedContent, '_blank');
-            });
-          };
-        } else if (jsonDisplayColumnsIndices.includes(index)) {
-          columnDef.createdCell = function(td, cellData, rowData, row, col) {
-            $(td).addClass('json-display-cell');
-            try {
-                // Check if it looks like JSON before parsing
-                if (typeof cellData === 'string' && (cellData.trim().startsWith('{') || cellData.trim().startsWith('['))) {
-                    var jsonData = JSON.parse(cellData);
-                    
-                    var $container = $('<div>');
-                    var $controls = $('<div class="json-controls">');
-                    var $expandBtn = $('<a>[+] Expand</a>');
-                    var $collapseBtn = $('<a>[-] Collapse</a>');
-                    var $viewer = $('<div>');
-
-                    $expandBtn.on('click', function() {
-                        $viewer.jsonViewer(jsonData, {collapsed: false, withQuotes: true});
-                        $(this).hide();
-                        $collapseBtn.show();
-                    });
-                    
-                    $collapseBtn.on('click', function() {
-                        $viewer.jsonViewer(jsonData, {collapsed: true, withQuotes: true});
-                        $(this).hide();
-                        $expandBtn.show();
-                    });
-                    
-                    // Initial state: collapsed
-                    $collapseBtn.hide(); 
-                    $viewer.jsonViewer(jsonData, {collapsed: true, withQuotes: true});
-
-                    $controls.append($expandBtn).append($collapseBtn);
-                    $container.append($controls).append($viewer);
-                    $(td).empty().append($container);
-                    
-                } else {
-                    td.innerHTML = cellData;
-                }
-            } catch (e) {
-                td.innerHTML = cellData;
-            }
-          };
-        } else if (imageColumnsIndices.includes(index)) {
-          columnDef.createdCell = function(td, cellData, rowData, row, col) {
-            if (cellData) {
-              td.innerHTML = '<img src="' + cellData + '" height="100" />';
-            }
-          };
-        }
-        return columnDef;
-      });
-
-      var table = $('#tsvTable').DataTable({
-        //serverSide: true,
-        // processing: true,
-        autoWidth: false,
-        scrollX: false, // Disable DataTables scrollX, use CSS overflow instead
-        colResize: true,
-        layout: {
-            topStart: {
-                buttons: ['colvis']
-            },
-            topEnd: {
-                search: {},
-                paging: {}
-            },
-            bottomEnd: {
-                paging: {}
-            }
-        },
-        language: {
-            search: "全文检索:",
-            searchPlaceholder: "过滤当前加载的数据..."
-        },
-        initComplete: function() {
-            // Find the DataTables search label and input to add tooltips
-            var $filter = $('.dt-search, .dataTables_filter');
-            
-            // Add tooltip to the label
-            $filter.find('label').addClass('help-label').attr('title', '在当前加载的所有数据行中，对所有列进行关键词模糊匹配。');
-            
-            // Add tooltip to the input
-            $filter.find('input')
-                .attr('title', '输入关键词，实时过滤当前表格中的所有内容。注意：仅搜索当前"加载条数"范围内的数据。')
-                .tooltip({container: 'body', trigger: 'hover focus'});
-                
-            // Re-initialize tooltips for the label as we added the class/title dynamically
-            $filter.find('label').tooltip({container: 'body'});
-        },
-        ajax: {
-          url: "/api/tsv/{{path}}?start=" + start + "&length=" + length + extraParams,
-          dataSrc:'data'
-        },
-        columns: dataTableColumns,
-        stateSave: true,
-        // scrollCollapse: true,
-        lengthMenu: [
-          [20, 100,  -1],
-          [20, 100, 'All']
-        ],
-        order:[]
-      });
-
-      $('#previous').on('click', function(e) {
-        e.preventDefault();
-        var start = parseInt($('#start').text());
-        var length = parseInt($('#length').val());
-        if (start > 0 && length >=0) {
-
-          key = $("#key").val();
-          //value = $("#value").val();
-          start -= length;
-          if (start < 0) start = 0;
-          $('#start').text(start);  
-          $('#input-start').val(start);  // 更新输入框的pageno
-          table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value) + extraParams).load();
-        }
-      });
-
-      $('#next').on('click', function(e) {
-        e.preventDefault();
-        var start = parseInt($('#start').text());
-        var length = parseInt($('#length').val());
-        if (length <=0) return;
-        key = $("#key").val();
-        start += length;
-        $('#start').text(start);  // 更新页面上的start
-        $('#input-start').val(start);  // 更新输入框的start
-        table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value) + extraParams).load();
-      });
-
-      $('#length').on('change', function() {
-        key = $("#key").val();
-        length = parseInt($(this).val());
-        table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value) + extraParams).load();
-      });
-
-      // 当用户在输入框中输入start并按回车时，更新start并重新加载表格
-      $('#input-start').on('keypress', function(e) {
-        if (e.which == 13) {
-          start = parseInt($(this).val());
-          if (start < 0)  start = 0;
-          $('#start').text(start);  // 更新页面上的start
-          table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length+ "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value) + extraParams).load();
-          return false;  // 阻止表单的默认提交行为
-        }
-      });
-
-
-      $('#key').on('change', function() {
-        key = $(this).val();
-        if (!key) {
-          update_value_labels(key);
-          table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length + extraParams).load();
-          return;
-        }
-
-        $.getJSON("/api/tsv/key/{{path}}?key=" + key + extraParams, function(data) {
-          $('#value').empty();
-          $.each(data, function(i, item) {
-            $('#value').append($('<option>', {
-              value: item,
-              text: item
-            }));
-            console.log("add key=" + item + "&i=" +i )
-          });
-          value = $("#value :first-child").text();
-          if (value) {
-            update_value_labels(value);
-            table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length + "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value) + extraParams).load();
-          }
-        });
-
-      });
-
-      function update_value_labels(value) {
-        if (!value) {
-          $("#label-value").text("")
-          $('#prev-value').text("");
-          $('#next-value').text("");
-          return;
-        }
-        $("#label-value").text(value)
-        var selectedOption = $("#value option[value='" + value + "']");
-        console.log("select option=" + value);
-        var prevOption = selectedOption.prev();
-        console.log("prev option=" + prevOption.val());
-        var nextOption = selectedOption.next();
-        if (prevOption.length > 0) {
-          $('#prev-value').text("<< " + prevOption.val());
-          $('#prev-value').attr("value", prevOption.val());
-          $('#prev-value').show();
-          $('#prev-value').tooltip('fixTitle');
-        } else {
-          $('#prev-value').hide();
-        }
-        if (nextOption.length > 0) {
-          $('#next-value').text(nextOption.val() + " >>");
-          $('#next-value').attr("value", nextOption.val());
-          $('#next-value').show();
-          $('#next-value').tooltip('fixTitle');
-        } else {
-          $('#next-value').hide();
-        }
+      var rawColumns = {{ columns | tojson }};
+      var jsonColumns = {{ json_cols | tojson }};
+      var jsonLinkColumns = {{ json_link_cols | tojson }};
+      var imageColumns = {{ image_cols | tojson }};
+      var hiddenColumns = {{ hide_cols | tojson }};
+      var extraParams = "{{ extra_params | safe }}";
+      var start = {{ start if start is not none else 0 }};
+      var requestedLength = {{ length if length is not none else 1000 }};
+      var currentPageQuery = new URLSearchParams(window.location.search);
+      document.getElementById("key").value = currentPageQuery.get("key") || "";
+      document.getElementById("value").value = currentPageQuery.get("value") || "";
+      var lengthSelect = document.getElementById("load-length");
+      if (Array.from(lengthSelect.options).some(function(option) {
+        return option.value === String(requestedLength);
+      })) {
+        lengthSelect.value = String(requestedLength);
       }
 
-      $('#input-value').on('change', function(e) {
-        value = $(this).val();
-        update_value_labels(value);
-        console.log("input " + value)
+      function selectedLoadLength() {
+        var selected = parseInt(document.getElementById("load-length").value, 10);
+        return Number.isFinite(selected) ? selected : 1000;
+      }
+
+      function apiUrl() {
+        var params = new URLSearchParams(currentPageQuery.toString());
+        params.set("start", String(start));
+        params.set("length", String(selectedLoadLength()));
+        var extra = new URLSearchParams(extraParams.replace(/^&/, ""));
+        extra.forEach(function(value, key) { params.set(key, value); });
+        return "/api/tsv/{{path}}?" + params.toString();
+      }
+
+      function jsonCellFormatter(cell) {
+        var value = cell.getValue();
+        if (value === null || value === undefined || value === "") {
+          return "";
+        }
+        var details = document.createElement("details");
+        details.className = "json-cell";
+        var summary = document.createElement("summary");
+        summary.textContent = "展开 JSON";
+        var pre = document.createElement("pre");
+        try {
+          var parsed = typeof value === "string" ? JSON.parse(value) : value;
+          pre.textContent = JSON.stringify(parsed, null, 2);
+        } catch (_error) {
+          pre.textContent = String(value);
+        }
+        details.appendChild(summary);
+        details.appendChild(pre);
+        return details;
+      }
+
+      function jsonLinkFormatter(cell) {
+        var value = cell.getValue();
+        if (value === null || value === undefined || value === "") {
+          return "";
+        }
+        var link = document.createElement("a");
+        link.href = "/json_viewer?content=" + encodeURIComponent(value);
+        link.target = "_blank";
+        link.rel = "noopener";
+        link.textContent = "打开 JSON";
+        return link;
+      }
+
+      function imageFormatter(cell) {
+        var value = cell.getValue();
         if (!value) {
-          table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length + extraParams).load();
+          return "";
+        }
+        var wrapper = document.createElement("div");
+        wrapper.className = "image-cell";
+        var image = document.createElement("img");
+        image.src = value;
+        image.alt = "";
+        image.loading = "lazy";
+        wrapper.appendChild(image);
+        return wrapper;
+      }
+
+      var columns = rawColumns.map(function(name, index) {
+        var definition = {
+          title: name,
+          field: name,
+          resizable: true,
+          minWidth: 88,
+          maxWidth: 800,
+          widthGrow: 1,
+          visible: hiddenColumns.indexOf(index) === -1,
+          frozen: index === 0,
+          headerTooltip: name
+        };
+        if (jsonLinkColumns.indexOf(index) !== -1) {
+          definition.formatter = jsonLinkFormatter;
+          definition.minWidth = 120;
+        } else if (jsonColumns.indexOf(index) !== -1) {
+          definition.formatter = jsonCellFormatter;
+          definition.minWidth = 260;
+          definition.variableHeight = true;
+        } else if (imageColumns.indexOf(index) !== -1) {
+          definition.formatter = imageFormatter;
+          definition.minWidth = 120;
+          definition.variableHeight = true;
+        }
+        return definition;
+      });
+
+      var persistenceID = "fserver.tsv:" + window.location.pathname + ":" +
+        rawColumns.join("|").split("").reduce(function(hash, char) {
+          return ((hash << 5) - hash + char.charCodeAt(0)) | 0;
+        }, 0);
+
+      var table = new Tabulator("#tsv-table", {
+        maxHeight: "calc(100vh - 250px)",
+        minHeight: 320,
+        columns: columns,
+        ajaxURL: apiUrl(),
+        ajaxResponse: function(_url, _params, response) {
+          return response.data || [];
+        },
+        layout: "fitDataStretch",
+        pagination: true,
+        paginationSize: 20,
+        paginationSizeSelector: [20, 100, 500, true],
+        locale: "zh-cn",
+        langs: {
+          "zh-cn": {
+            data: {
+              loading: "正在加载",
+              error: "加载失败"
+            },
+            pagination: {
+              page_size: "每页",
+              page_title: "页码",
+              first: "首页",
+              first_title: "第一页",
+              last: "尾页",
+              last_title: "最后一页",
+              prev: "上一页",
+              prev_title: "上一页",
+              next: "下一页",
+              next_title: "下一页",
+              all: "全部",
+              counter: {
+                showing: "显示",
+                of: "共",
+                rows: "行",
+                pages: "页"
+              }
+            }
+          }
+        },
+        movableColumns: false,
+        resizableColumnFit: false,
+        responsiveLayout: false,
+        persistence: true,
+        persistenceID: persistenceID,
+        placeholder: "没有匹配的数据",
+        tooltips: true,
+        variableHeight: true,
+        columnDefaults: {
+          resizable: true,
+          minWidth: 88,
+          headerTooltip: true
+        }
+      });
+
+      table.on("dataLoaded", function(data) {
+        document.getElementById("table-status").textContent =
+          "已加载 " + data.length + " 条；文件共 {{recordsTotal}} 条";
+      });
+
+      table.on("dataLoadError", function(error) {
+        document.getElementById("table-status").textContent = "加载失败：" + error.message;
+      });
+
+      function reconcileSearch() {
+        var query = document.getElementById("search").value.trim().toLowerCase();
+        if (!query) {
+          table.clearFilter();
           return;
         }
+        table.setFilter(function(row) {
+          return rawColumns.some(function(name) {
+            var value = row[name];
+            if (value === null || value === undefined) {
+              return false;
+            }
+            return String(value).toLowerCase().indexOf(query) !== -1;
+          });
+        });
+      }
 
-        console.log("req key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value))
-        table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length + "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value) + extraParams).load();
-        $(this).val("");
+      document.getElementById("search").addEventListener("input", reconcileSearch);
+
+      document.getElementById("key").addEventListener("change", function() {
+        var key = this.value;
+        var datalist = document.getElementById("key-values");
+        datalist.innerHTML = "";
+        if (!key) {
+          return;
+        }
+        var extra = new URLSearchParams(extraParams.replace(/^&/, ""));
+        extra.set("key", key);
+        fetch("/api/tsv/key/{{path}}?" + extra.toString())
+          .then(function(response) { return response.json(); })
+          .then(function(values) {
+            values.forEach(function(value) {
+              var option = document.createElement("option");
+              option.value = String(value);
+              datalist.appendChild(option);
+            });
+          });
       });
 
-      $('#prev-value, #next-value').on('click', function(e) {
-        e.preventDefault();
-        value = $(this).attr('value')
-        update_value_labels(value);
-        table.ajax.url("/api/tsv/{{path}}?start=" + start + "&length=" + length + "&key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value) + extraParams).load();
+      function reloadData() {
+        table.setData(apiUrl()).then(function() {
+          reconcileSearch();
+        });
+      }
+
+      document.getElementById("load-length").addEventListener("change", reloadData);
+      document.getElementById("apply-key-filter").addEventListener("click", function() {
+        currentPageQuery.set("key", document.getElementById("key").value);
+        currentPageQuery.set("value", document.getElementById("value").value);
+        reloadData();
       });
 
-      // Settings modal: apply
-      $('#settings-apply').on('click', function() {
-        var params = [];
-        var names = $('#setting-names').val().trim();
-        var header = $('#setting-header').is(':checked');
-        var jsonCols = $('#setting-json-cols').val().trim();
-        var jsonLinkCols = $('#setting-json-link-cols').val().trim();
-        var imageCols = $('#setting-image-cols').val().trim();
-        var hideCols = $('#setting-hide-cols').val().trim();
-
-        if (names)        params.push('names='         + encodeURIComponent(names));
-        if (!header)      params.push('header=false');
-        params.push('delim=' + encodeURIComponent(paramDelim));
-        if (jsonCols)     params.push('json_cols='      + encodeURIComponent(jsonCols));
-        if (jsonLinkCols) params.push('json_link_cols=' + encodeURIComponent(jsonLinkCols));
-        if (imageCols)    params.push('image_cols='     + encodeURIComponent(imageCols));
-        if (hideCols)     params.push('hide_cols='      + encodeURIComponent(hideCols));
-
-        var url = '/tsv/{{path}}' + (params.length ? '?' + params.join('&') : '');
-        window.location.href = url;
+      document.getElementById("reset-layout").addEventListener("click", function() {
+        if (typeof table.clearPersistence === "function") {
+          table.clearPersistence();
+        }
+        window.location.reload();
       });
 
-      // Settings modal: clear all settings
-      $('#settings-clear').on('click', function() {
-        window.location.href = '/tsv/{{path}}';
+      var copyButton = document.querySelector(".copy-path-button");
+      copyButton.addEventListener("click", function() {
+        var value = copyButton.getAttribute("data-copy-path");
+        var label = copyButton.querySelector(".button-label");
+        var originalTitle = copyButton.title;
+        var done = function() {
+          label.textContent = "已复制";
+          copyButton.title = "已复制";
+          window.setTimeout(function() {
+            label.textContent = "复制路径";
+            copyButton.title = originalTitle;
+          }, 1400);
+        };
+        var fallback = function() {
+          var textarea = document.createElement("textarea");
+          textarea.value = value;
+          textarea.style.cssText = "position:fixed;left:-9999px;top:0";
+          document.body.appendChild(textarea);
+          textarea.select();
+          document.execCommand("copy");
+          textarea.remove();
+          done();
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(value).then(done, fallback);
+        } else {
+          fallback();
+        }
       });
 
-    });
+      var picker = document.getElementById("column-picker");
+      var pickerList = document.getElementById("column-picker-list");
 
+      function renderColumnPicker() {
+        pickerList.innerHTML = "";
+        table.getColumns().forEach(function(column) {
+          var definition = column.getDefinition();
+          var label = document.createElement("label");
+          var checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.checked = column.isVisible();
+          checkbox.addEventListener("change", function() {
+            if (checkbox.checked) {
+              column.show();
+            } else {
+              column.hide();
+            }
+          });
+          label.appendChild(checkbox);
+          label.appendChild(document.createTextNode(definition.title || definition.field));
+          pickerList.appendChild(label);
+        });
+      }
+
+      document.getElementById("column-picker-button").addEventListener("click", function(event) {
+        event.stopPropagation();
+        renderColumnPicker();
+        picker.classList.toggle("open");
+      });
+
+      document.getElementById("column-picker-close").addEventListener("click", function() {
+        picker.classList.remove("open");
+      });
+
+      document.addEventListener("click", function(event) {
+        if (!picker.contains(event.target)) {
+          picker.classList.remove("open");
+        }
+      });
+    })();
     </script>
-
-    <!-- Settings Modal -->
-    <div class="modal fade" id="settingsModal" tabindex="-1" role="dialog">
-      <div class="modal-dialog" role="document" style="max-width: 500px;">
-        <div class="modal-content">
-          <div class="modal-header">
-            <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
-            <h4 class="modal-title"><span class="glyphicon glyphicon-cog"></span> 列显示设置</h4>
-          </div>
-          <div class="modal-body">
-            <div class="form-horizontal" style="font-size: 13px;">
-
-              <div class="form-group" style="margin-bottom: 12px;">
-                <label class="col-sm-4 control-label" style="padding-top:6px;">首行为表头</label>
-                <div class="col-sm-8" style="padding-top:6px;">
-                  <input type="checkbox" id="setting-header" {% if param_header %}checked{% endif %}>
-                  <span class="text-muted small" style="margin-left:6px;">取消勾选则所有行均视为数据</span>
-                </div>
-              </div>
-
-              <div class="form-group" style="margin-bottom: 12px;">
-                <label class="col-sm-4 control-label" for="setting-names">自定义列名</label>
-                <div class="col-sm-8">
-                  <input type="text" class="form-control input-sm" id="setting-names"
-                         placeholder="col1,col2,col3 (逗号分隔)"
-                         value="{{ param_names }}">
-                  <span class="help-block" style="font-size:11px; margin:2px 0 0;">按顺序覆盖列名，优先级高于首行</span>
-                </div>
-              </div>
-
-              <div class="form-group" style="margin-bottom: 12px;">
-                <label class="col-sm-4 control-label" for="setting-json-cols">JSON 展示列</label>
-                <div class="col-sm-8">
-                  <input type="text" class="form-control input-sm" id="setting-json-cols"
-                         placeholder="列名或序号，逗号分隔"
-                         value="{{ param_json_cols }}">
-                  <span class="help-block" style="font-size:11px; margin:2px 0 0;">内联折叠展示 JSON 内容</span>
-                </div>
-              </div>
-
-              <div class="form-group" style="margin-bottom: 12px;">
-                <label class="col-sm-4 control-label" for="setting-json-link-cols">JSON 链接列</label>
-                <div class="col-sm-8">
-                  <input type="text" class="form-control input-sm" id="setting-json-link-cols"
-                         placeholder="列名或序号，逗号分隔"
-                         value="{{ param_json_link_cols }}">
-                  <span class="help-block" style="font-size:11px; margin:2px 0 0;">点击单元格在新窗口打开 JSON Viewer</span>
-                </div>
-              </div>
-
-              <div class="form-group" style="margin-bottom: 12px;">
-                <label class="col-sm-4 control-label" for="setting-image-cols">图片列</label>
-                <div class="col-sm-8">
-                  <input type="text" class="form-control input-sm" id="setting-image-cols"
-                         placeholder="列名或序号，逗号分隔"
-                         value="{{ param_image_cols }}">
-                  <span class="help-block" style="font-size:11px; margin:2px 0 0;">将 URL 渲染为缩略图</span>
-                </div>
-              </div>
-
-              <div class="form-group" style="margin-bottom: 4px;">
-                <label class="col-sm-4 control-label" for="setting-hide-cols">隐藏列</label>
-                <div class="col-sm-8">
-                  <input type="text" class="form-control input-sm" id="setting-hide-cols"
-                         placeholder="列名或序号，逗号分隔"
-                         value="{{ param_hide_cols }}">
-                  <span class="help-block" style="font-size:11px; margin:2px 0 0;">不显示这些列（数据仍加载）</span>
-                </div>
-              </div>
-
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-default" data-dismiss="modal">取消</button>
-            <button type="button" class="btn btn-danger btn-sm" id="settings-clear" style="float:left;">清除所有设置</button>
-            <button type="button" class="btn btn-primary" id="settings-apply">应用并跳转</button>
-          </div>
-        </div>
-      </div>
-    </div>
   </body>
 </html>

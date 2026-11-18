@@ -9,6 +9,10 @@
 ### 文件管理
 
 - 浏览本地目录和文件，目录路径与 URL 直接对应。
+- 目录列表通过 `GET /api/list/{path}` JSON API 加载，前端使用 Tabulator。
+- 目录页、Markdown 页和表格页均可一键复制当前绝对路径。
+- 文件名点击规则：`.md` 打开 Markdown，`.tsv`/`.csv` 打开表格，其他文件直接下载。
+- list 与 Markdown 页面共用同一套面包屑组件，长路径可横向滚动。
 - 将文件拖拽或通过 API 上传到指定目录。
 - 下载原始文件。
 - 将 TSV、CSV、JSON Lines 等表格文件转换为 Excel。
@@ -22,14 +26,18 @@
 - 自动识别并格式化单元格中的 JSON。
 - 自动识别图片 URL 并渲染预览。
 - 对列数不规则的 TSV/CSV 启用兼容模式，并显示提示。
+- 表格查看器基于 Tabulator，内置列宽拖拽、冻结首列、列显示和布局持久化。
+- 页面顶部提供当前表格文件绝对路径的一键复制按钮。
 
 ### Markdown 查看器
 
-- 支持 GitHub 风格 Markdown、表格、代码高亮和 Mermaid 图表。
+- 支持 GitHub 风格 Markdown、代码高亮和 Mermaid 图表。
+- Markdown 表格使用独立滚动视口：表头固定，宽表横向滚动，支持拖动列边界调整列宽，并在当前浏览器会话内保留列宽。
 - 自动生成目录侧边栏。
 - 目录侧边栏支持拖拽调整宽度、折叠和展开。
 - 侧边栏宽度和折叠状态会保存在浏览器 `localStorage` 中。
 - 代码块提供复制按钮。
+- 顶部面包屑与目录页保持一致，并提供当前 Markdown 文件绝对路径的复制按钮。
 - 支持下载包含上述交互能力的 HTML 文件。
 
 ## 快速开始
@@ -134,8 +142,9 @@ fp --html README.md              # 在 README.md 旁生成 README.html
 
 ### 浏览和查看
 
-- `GET /list/{path}`：浏览目录；如果路径是文件，则跳转到对应查看器。
-- `GET /tsv/{path}`：表格查看器。
+- `GET /list/{path}`：浏览目录；如果是 `.md`、`.tsv` 或 `.csv` 文件则跳转预览，其他文件跳转下载。
+- `GET /api/list/{path}`：返回绝对路径、目录项、元数据、面包屑和文件默认打开/预览/下载 URL。
+- `GET /tsv/{path}`：Tabulator 表格查看器。
   - `start`：起始行，默认 `0`。
   - `length`：返回行数，默认 `1000`。
   - `key` / `value`：按列名和值筛选。
@@ -164,14 +173,14 @@ fp --html README.md              # 在 README.md 旁生成 README.html
 
 - 后端：Python、FastAPI、Pandas、Aiofiles。
 - 模板：Jinja2 和原生 HTML。
-- 表格交互：jQuery DataTables 及其扩展。
-- Markdown：Python-Markdown、代码高亮、Mermaid。
+- 表格交互：Tabulator。
+- Markdown：Python-Markdown、代码高亮、Mermaid、column-resizer。
 - 缓存：使用 `cachetools` 缓存已读取的 DataFrame，默认缓存 48 小时。
 
 ## 注意事项
 
 - 文件路径相对于服务进程的当前工作目录。
-- 下载的 Markdown HTML 使用 CDN 加载 Mermaid、代码高亮和 GitHub Markdown 样式；离线环境下这些外部资源可能无法加载。
+- Markdown HTML 和表格查看器使用 CDN 加载 Mermaid、column-resizer、Tabulator、代码高亮和样式；离线环境下这些外部资源可能无法加载。
 - 当前大文件读取仍会将 DataFrame 加载到内存，超大文件建议关注进程内存使用。
 
 ## 待办事项

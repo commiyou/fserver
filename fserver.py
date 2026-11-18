@@ -55,46 +55,161 @@ app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
 
+def _quote_route_path(path: Path) -> str:
+    """Percent-encode path components while preserving filesystem separators."""
+    from urllib.parse import quote
+
+    absolute = bool(path.parts and path.parts[0].startswith("/"))
+    parts = [
+        quote(part, safe="")
+        for part in path.parts
+        if part and not part.startswith("/") and part != "."
+    ]
+    encoded = "/".join(parts)
+    return f"/{encoded}" if absolute else encoded
+
+
+def _route_url(prefix: str, path: Path) -> str:
+    """Build a route URL without encoding filesystem separators."""
+    return f"{prefix}/{_quote_route_path(path)}"
+
+
+def _file_open_url(path: Path) -> str:
+    """Return the default action URL for a file."""
+    suffix = path.suffix.lower()
+    if suffix == ".md":
+        return _route_url("/md", path)
+    if suffix == ".tsv":
+        return _route_url("/tsv", path)
+    if suffix == ".csv":
+        return f"{_route_url('/tsv', path)}?delim=%2C"
+    return _route_url("/download", path)
+
+
+def _file_preview_url(path: Path) -> str | None:
+    """Return a preview URL only for document formats with a dedicated viewer."""
+    if path.suffix.lower() in {".md", ".tsv", ".csv"}:
+        return _file_open_url(path)
+    return None
+
+
+def _canonical_route_redirect(request: Request, prefix: str, path: Path) -> RedirectResponse | None:
+    """Redirect legacy percent-encoded navigation URLs to their clean form."""
+    raw_path = request.scope.get("raw_path", b"").decode("ascii", errors="ignore")
+    canonical = _route_url(prefix, path)
+    if raw_path == canonical:
+        return None
+    query = request.url.query
+    if query:
+        canonical = f"{canonical}?{query}"
+    return RedirectResponse(canonical, status_code=status.HTTP_308_PERMANENT_REDIRECT)
+
+
 def get_directory_contents(directory: Path | str) -> list[dict[str, Any]]:
-    """return dir content"""
+    """Return directory entries with metadata and ready-to-use URLs."""
     contents = []
-    for item in os.scandir(directory):
-        if os.path.exists(item):
-            mtime = item.stat().st_mtime
+    base_path = Path(directory)
+    for item in os.scandir(base_path):
+        try:
+            stat_result = item.stat()
+        except OSError:
+            continue
+        if os.path.exists(item.path):
+            is_dir = item.is_dir()
+            item_path = base_path / item.name
+            mtime = stat_result.st_mtime
             item_info = {
                 "name": item.name,
-                "size": item.stat().st_size if item.is_file() else "",
+                "size": stat_result.st_size if not is_dir else None,
                 "time": mtime,
-                "type": "file" if item.is_file() else "dir",
-                "human_size": human_readable.file_size(item.stat().st_size, gnu=True),
+                "type": "dir" if is_dir else "file",
+                "human_size": human_readable.file_size(stat_result.st_size, gnu=True) if not is_dir else "—",
                 "human_time": human_readable.date_time(datetime.datetime.fromtimestamp(mtime)),  # noqa: DTZ006
                 "date_str": datetime.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M"),  # noqa: DTZ006
+                "url": _route_url("/list", item_path),
             }
+            if not is_dir:
+                item_info["url"] = _file_open_url(item_path)
+                preview_url = _file_preview_url(item_path)
+                if preview_url:
+                    item_info["preview_url"] = preview_url
+                item_info["download_url"] = _route_url("/download", item_path)
             contents.append(item_info)
     return contents
+
+
+def get_breadcrumbs(path: Path) -> list[dict[str, str]]:
+    """Return breadcrumb entries whose URLs are safe to use directly."""
+    breadcrumbs: list[dict[str, str]] = []
+    for index, part in enumerate(path.parts):
+        if part in {"", ".", "/"}:
+            continue
+        target = Path(*path.parts[: index + 1])
+        breadcrumbs.append({"name": part, "url": _route_url("/list", target)})
+    return breadcrumbs
+
+
+def render_breadcrumbs_html(parent_path: Path, current_name: str | None) -> str:
+    """Render the shared breadcrumb component used by list and Markdown pages."""
+    parts = [
+        '<ol class="breadcrumbs" aria-label="面包屑导航">',
+        '<li><a class="home-link" href="/list/" title="根目录">⌂</a></li>',
+    ]
+    for crumb in get_breadcrumbs(parent_path):
+        name = html_mod.escape(crumb["name"])
+        url = html_mod.escape(crumb["url"], quote=True)
+        parts.append(f'<li><a href="{url}" title="{name}">{name}</a></li>')
+    if current_name:
+        name = html_mod.escape(current_name)
+        parts.append(f'<li><span class="current" title="{name}">{name}</span></li>')
+    parts.append("</ol>")
+    return "".join(parts)
 
 
 @app.get("/list/{file_path:path}", name="list")
 async def list_files(request: Request, file_path: Path) -> Response:
     """list files in `file_path`"""
     path = Path(file_path)
+    redirect = _canonical_route_redirect(request, "/list", path)
+    if redirect:
+        return redirect
     if path.is_file():
-        if path.suffix.lower() == ".md":
-            url = app.url_path_for("render_md", file_path=file_path)
-        else:
-            url = app.url_path_for("tsv", file_path=file_path)
-        return RedirectResponse(url=url)
-    files = get_directory_contents(file_path)
-    breadcrumbs = [{"name": part, "url": "/" + "/".join(path.parts[: i + 1])} for i, part in enumerate(path.parts)]
+        return RedirectResponse(url=_file_open_url(path))
+    if not path.is_dir():
+        raise HTTPException(status_code=404, detail=f"Directory not found: {file_path}")
+    template_path = "" if str(file_path) == "." else str(file_path)
+    current_name = "根目录" if not template_path else path.name
+    breadcrumbs_html = render_breadcrumbs_html(path.parent, current_name)
 
     return templates.TemplateResponse(
+        request,
         "list.html",
         {
-            "request": request,
-            "files": files,
-            "path": file_path,
-            "breadcrumbs": breadcrumbs,
+            "path": template_path,
+            "copy_path": str(path.resolve()),
+            "breadcrumbs_html": breadcrumbs_html,
         },
+    )
+
+
+@app.get("/api/list/{file_path:path}", name="api_list")
+async def api_list(file_path: str):
+    """Return a directory listing and breadcrumbs as JSON."""
+    path = Path(file_path)
+    if path.is_file():
+        raise HTTPException(status_code=409, detail="Requested path is a file, not a directory.")
+    if not path.is_dir():
+        raise HTTPException(status_code=404, detail=f"Directory not found: {file_path}")
+    files = get_directory_contents(path)
+    return JSONResponse(
+        {
+            "path": file_path,
+            "absolute_path": str(path.resolve()),
+            "parent_path": str(path.parent),
+            "total": len(files),
+            "breadcrumbs": get_breadcrumbs(path),
+            "items": files,
+        }
     )
 
 
@@ -116,7 +231,7 @@ async def upload_file(file_path: str, file: UploadFile = File(...)) -> RedirectR
         content = await file.read()
         await buffer.write(content)
 
-    url = app.url_path_for("list", file_path=file_path)
+    url = _route_url("/list", Path(file_path))
     response = RedirectResponse(url=url, status_code=status.HTTP_303_SEE_OTHER)
     return response
 
@@ -284,24 +399,21 @@ def get_col_indices(df: DataFrame, cols: Optional[str]) -> list[int]:
     return indices
 
 
-@app.get("/tsv/{file_path:path}", name="tsv")
-async def read_tsv(  # noqa: PLR0917
+def _build_tsv_context(  # noqa: PLR0913
     request: Request,
     file_path: str,
-    start: Optional[int] = 0,
-    length: Optional[int] = 1000,
-    reload: Optional[bool] = False,
-    key: Optional[str] = None,
-    value: Optional[str] = None,
-    names: Optional[str] = None,
-    header: Optional[bool] = True,
-    json_link_cols: Optional[str] = None,
-    json_cols: Optional[str] = None,
-    image_cols: Optional[str] = None,
-    hide_cols: Optional[str] = None,
-    delim: str = "\t",
-):
-    """show tabluar page of tsv file using pandas display"""
+    start: int | None,
+    length: int | None,
+    reload: bool | None,
+    names: str | None,
+    header: bool | None,
+    json_link_cols: str | None,
+    json_cols: str | None,
+    image_cols: str | None,
+    hide_cols: str | None,
+    delim: str,
+) -> dict[str, Any]:
+    """Build the shared template context for tabular previews."""
     path = Path(file_path)
     if not path.is_file():
         return {"error": f"File not found: {file_path}"}
@@ -345,32 +457,67 @@ async def read_tsv(  # noqa: PLR0917
     from urllib.parse import quote
     extra_params += f"&delim={quote(delim, safe='')}"
 
-    return templates.TemplateResponse(
-        "tsv.html",
-        {
-            "request": request,
-            "path": file_path,
-            "parent_path": str(parent_path),
-            "name": name,
-            "columns": columns,
-            "length": length,
-            "start": start,
-            "recordsTotal": len(df),
-            "json_link_cols": json_link_col_list,
-            "json_cols": json_col_list,
-            "image_cols": image_col_list,
-            "hide_cols": hide_col_list,
-            "warning_msg": warning_msg,
-            "extra_params": extra_params,
-            "param_names": names or "",
-            "param_header": header if header is not None else True,
-            "param_delim": delim,
-            "param_json_cols": json_cols or "",
-            "param_json_link_cols": json_link_cols or "",
-            "param_image_cols": image_cols or "",
-            "param_hide_cols": hide_cols or "",
-        },
+    return {
+        "request": request,
+        "path": file_path,
+        "copy_path": str(path.resolve()),
+        "parent_path": str(parent_path),
+        "name": name,
+        "columns": columns,
+        "length": length,
+        "start": start,
+        "recordsTotal": len(df),
+        "json_link_cols": json_link_col_list,
+        "json_cols": json_col_list,
+        "image_cols": image_col_list,
+        "hide_cols": hide_col_list,
+        "warning_msg": warning_msg,
+        "extra_params": extra_params,
+        "param_names": names or "",
+        "param_header": header if header is not None else True,
+        "param_delim": delim,
+        "param_json_cols": json_cols or "",
+        "param_json_link_cols": json_link_cols or "",
+        "param_image_cols": image_cols or "",
+        "param_hide_cols": hide_cols or "",
+    }
+
+
+@app.get("/tsv/{file_path:path}", name="tsv")
+async def read_tsv(  # noqa: PLR0917
+    request: Request,
+    file_path: str,
+    start: Optional[int] = 0,
+    length: Optional[int] = 1000,
+    reload: Optional[bool] = False,
+    key: Optional[str] = None,
+    value: Optional[str] = None,
+    names: Optional[str] = None,
+    header: Optional[bool] = True,
+    json_link_cols: Optional[str] = None,
+    json_cols: Optional[str] = None,
+    image_cols: Optional[str] = None,
+    hide_cols: Optional[str] = None,
+    delim: str = "\t",
+):
+    """Show the primary Tabulator-based tabular page."""
+    context = _build_tsv_context(
+        request,
+        file_path,
+        start,
+        length,
+        reload,
+        names,
+        header,
+        json_link_cols,
+        json_cols,
+        image_cols,
+        hide_cols,
+        delim,
     )
+    if "error" in context:
+        return context
+    return templates.TemplateResponse(request, "tsv.html", context)
 
 
 @app.get("/txt/{file_path:path}")
@@ -410,6 +557,25 @@ def _rewrite_relative_img_src(html_body: str, base_dir: Path) -> str:
         return f"{m.group(1)}{m.group(2)}/download/{quote(str(target))}{m.group(2)}"
 
     return _IMG_SRC_RE.sub(_sub, html_body)
+
+
+_MD_TABLE_RE = re.compile(r"<table(?:\s[^>]*)?>.*?</table>", re.IGNORECASE | re.DOTALL)
+
+
+def _wrap_markdown_tables(html_body: str) -> str:
+    """Wrap rendered Markdown tables in a keyboard-accessible scroll viewport."""
+    table_index = 0
+
+    def _sub(match: re.Match) -> str:
+        nonlocal table_index
+        table_index += 1
+        return (
+            f'<div class="markdown-table-scroll" tabindex="0" role="region" '
+            f'aria-label="表格 {table_index}，可横向、纵向滚动并调整列宽" '
+            f'data-markdown-table="{table_index}">{match.group(0)}</div>'
+        )
+
+    return _MD_TABLE_RE.sub(_sub, html_body)
 
 
 def _mermaid_fence(source, language, css_class, options, md, **kwargs):
@@ -459,10 +625,14 @@ async def render_md(request: Request, file_path: str) -> Response:
     # route; serve them through /download instead. Exported HTML keeps them as-is.
     if "path" in request.scope and request.query_params.get("download") != "1":
         html_body = _rewrite_relative_img_src(html_body, path.resolve().parent)
+    html_body = _wrap_markdown_tables(html_body)
 
     toc = getattr(converter, "toc", "")  # "" when no headings found
 
-    parent_path = str(path.parent)
+    markdown_breadcrumbs_html = render_breadcrumbs_html(path.parent, path.name)
+    markdown_download_url = f"{_route_url('/md', path)}?download=1"
+    markdown_raw_download_url = _route_url("/download", path)
+    markdown_copy_path = html_mod.escape(str(path.resolve()), quote=True)
     toc_sidebar = (
         '<aside class="toc-sidebar" id="toc-sidebar">'
         '<div class="toc-header">'
@@ -489,15 +659,40 @@ async def render_md(request: Request, file_path: str) -> Response:
   <style>
     body {{ background: #f6f8fa; margin: 0; padding: 0; }}
     .topbar {{
-      background: #fff; border-bottom: 1px solid #dde0e4;
-      padding: 8px 20px; font-size: 13px; position: sticky; top: 0; z-index: 100;
+      position: sticky; top: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 9px 20px; font-size: 13px;
+      background: rgba(255,255,255,.97); border-bottom: 1px solid #dde0e4;
+      box-shadow: 0 2px 8px rgba(0,0,0,.06); backdrop-filter: blur(8px);
     }}
-    .topbar a {{ color: #1a56a0; text-decoration: none; margin-right: 8px; }}
-    .topbar a:hover {{ text-decoration: underline; }}
+    .topbar-actions {{ display:flex; flex:0 0 auto; align-items:center; gap:8px; }}
+    .topbar-actions a, .topbar-actions button {{
+      padding: 4px 8px; color: #1a56a0; background: #fff; border: 1px solid #c9d1d9;
+      border-radius: 4px; text-decoration: none; white-space: nowrap;
+      font: inherit; cursor: pointer;
+    }}
+    .topbar-actions a:hover, .topbar-actions button:hover {{ border-color:#1a56a0; text-decoration:none; }}
+    .breadcrumbs {{
+      display:flex; flex:1 1 auto; align-items:center; min-width:0;
+      margin:0; padding:0; overflow-x:auto; overflow-y:hidden;
+      list-style:none; white-space:nowrap; scrollbar-width:thin;
+    }}
+    .breadcrumbs li {{ display:flex; flex:0 0 auto; align-items:center; min-width:0; }}
+    .breadcrumbs li + li::before {{ content:"/"; margin:0 7px; color:#a0a7b1; }}
+    .breadcrumbs a, .breadcrumbs .current {{
+      overflow:hidden; max-width:220px; text-overflow:ellipsis; white-space:nowrap;
+    }}
+    .breadcrumbs a {{ color:#1a56a0; text-decoration:none; }}
+    .breadcrumbs a:hover {{ text-decoration:underline; }}
+    .breadcrumbs .current {{ color:#344054; font-weight:600; }}
+    .home-link {{
+      display:inline-flex; align-items:center; justify-content:center;
+      width:28px; height:28px; border-radius:5px; background:#f1f5f9; text-decoration:none;
+    }}
     .toc-toggle {{
       border: 1px solid #c9d1d9; border-radius: 4px; background: #fff;
       color: #1a56a0; cursor: pointer; font-size: 12px; padding: 3px 8px;
-      margin-left: 12px;
+      margin-left: 0;
     }}
     .toc-toggle:hover {{ background: #f3f6f8; }}
     .page-layout {{
@@ -516,6 +711,65 @@ async def render_md(request: Request, file_path: str) -> Response:
       border: 1px solid #dde0e4;
       border-radius: 6px;
       box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    }}
+    /* Markdown tables get a dedicated two-axis scroll viewport and sticky header. */
+    .markdown-table-scroll {{
+      position: relative;
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      max-height: 80vh;
+      margin: 16px 0;
+      overflow: auto;
+      overscroll-behavior: contain;
+      background: #fff;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+    }}
+    .markdown-table-scroll:focus {{
+      outline: 2px solid #0969da;
+      outline-offset: 2px;
+    }}
+    .markdown-table-scroll > table {{
+      display: table;
+      width: max-content;
+      min-width: 100%;
+      max-width: none;
+      max-height: none;
+      margin: 0;
+      overflow: visible;
+      border-collapse: collapse;
+      border-spacing: 0;
+    }}
+    .markdown-table-scroll > table.grip-flex:not([style]) {{
+      width: max-content !important;
+      min-width: 100% !important;
+    }}
+    .markdown-table-scroll th,
+    .markdown-table-scroll td {{
+      min-width: 6.5rem;
+      overflow-wrap: break-word;
+      white-space: normal;
+    }}
+    .markdown-table-scroll thead th {{
+      position: sticky;
+      top: 0;
+      z-index: 3;
+      background: #f6f8fa;
+      box-shadow: inset 0 -1px 0 #d0d7de;
+    }}
+    .markdown-table-scroll .grip-container {{
+      z-index: 4;
+    }}
+    .markdown-table-scroll .grip-handle:hover .markdown-column-grip,
+    .markdown-table-scroll .grip-drag .markdown-column-grip {{
+      background: #0969da;
+    }}
+    .markdown-column-grip {{
+      width: 2px;
+      height: 100%;
+      margin: 0 auto;
+      background: transparent;
     }}
     /* TOC sidebar */
     .toc-sidebar {{
@@ -594,21 +848,104 @@ async def render_md(request: Request, file_path: str) -> Response:
 </head>
 <body>
   <div class="topbar">
-    <a href="/list/{parent_path}">&#8592; {parent_path}/</a>
-    <span style="color:#555">{path.name}</span>
-    {'<button class="toc-toggle" type="button" aria-expanded="true">隐藏目录</button>' if has_toc else ''}
-    <a href="/md/{file_path}?download=1" style="margin-left:8px">下载 HTML</a>
-    <a href="/download/{file_path}" style="float:right">下载</a>
+    {markdown_breadcrumbs_html}
+    <div class="topbar-actions">
+      {'<button class="toc-toggle" type="button" aria-expanded="true">隐藏目录</button>' if has_toc else ''}
+      <button class="copy-path-button" type="button" data-copy-path="{markdown_copy_path}" title="{markdown_copy_path}">复制路径</button>
+      <a href="{markdown_download_url}">下载 HTML</a>
+      <a href="{markdown_raw_download_url}">下载</a>
+    </div>
   </div>
+  <script>
+    (function() {{
+      var breadcrumbs = document.querySelector('.breadcrumbs');
+      window.requestAnimationFrame(function() {{
+        breadcrumbs.scrollLeft = breadcrumbs.scrollWidth;
+      }});
+      var copyButton = document.querySelector('.copy-path-button');
+      copyButton.addEventListener('click', function() {{
+        var value = copyButton.getAttribute('data-copy-path');
+        var done = function() {{
+          copyButton.textContent = '已复制';
+          window.setTimeout(function() {{ copyButton.textContent = '复制路径'; }}, 1400);
+        }};
+        var fallback = function() {{
+          var textarea = document.createElement('textarea');
+          textarea.value = value;
+          textarea.style.cssText = 'position:fixed;left:-9999px;top:0';
+          document.body.appendChild(textarea);
+          textarea.select();
+          document.execCommand('copy');
+          textarea.remove();
+          done();
+        }};
+        if (navigator.clipboard && navigator.clipboard.writeText) {{
+          navigator.clipboard.writeText(value).then(done, fallback);
+        }} else {{
+          fallback();
+        }}
+      }});
+    }})();
+  </script>
   <div class="page-layout" id="page-layout">
     {toc_sidebar}
     <article class="markdown-body">
 {html_body}
     </article>
   </div>
+  <script src="https://cdn.jsdelivr.net/npm/column-resizer@1.4.0/dist/column-resizer.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.4.0/mermaid.min.js"></script>
   <script>
     mermaid.initialize({{ startOnLoad: true, theme: 'default' }});
+  </script>
+  <script>
+    (function() {{
+      var ColumnResizerClass = window.ColumnResizer && window.ColumnResizer.default;
+      if (!ColumnResizerClass) return;
+      var measureContext = document.createElement('canvas').getContext('2d');
+      function measureText(value, bold) {{
+        measureContext.font = (bold ? '600 ' : '') + '14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        return measureContext.measureText(value || '').width;
+      }}
+      function initialWidths(table) {{
+        var headers = table.tHead ? Array.from(table.tHead.rows[0].cells) : [];
+        var rows = table.tBodies.length ? Array.from(table.tBodies[0].rows).slice(0, 100) : [];
+        return headers.map(function(header, index) {{
+          var values = [header.innerText.replace(/\\s+/g, ' ').trim()];
+          rows.forEach(function(row) {{
+            var cell = row.cells[index];
+            if (cell) values.push(cell.innerText.replace(/\\s+/g, ' ').trim());
+          }});
+          var naturalWidth = Math.max.apply(null, values.map(function(value) {{
+            return measureText(value, value === values[0]);
+          }}));
+          var compact = values.slice(1).filter(Boolean).every(function(value) {{
+            return /^[\\d\\s.,:+\\-%/]+$/.test(value) || /^\\d{{4}}-\\d{{2}}-\\d{{2}}/.test(value);
+          }});
+          var cap = compact ? 170 : 420;
+          return Math.round(Math.max(96, Math.min(cap, naturalWidth + 30)));
+        }});
+      }}
+      document.querySelectorAll('.markdown-table-scroll > table').forEach(function(table, index) {{
+        table.id = 'markdown-table-' + (index + 1);
+        table.classList.add('markdown-table');
+        var options = {{
+          resizeMode: 'overflow',
+          liveDrag: true,
+          minWidth: 80,
+          headerOnly: true,
+          removePadding: false,
+          gripInnerHtml: '<div class="markdown-column-grip"></div>',
+          serialize: true
+        }};
+        try {{
+          if (!sessionStorage.getItem(table.id)) options.widths = initialWidths(table);
+        }} catch (_error) {{
+          options.widths = initialWidths(table);
+        }}
+        new ColumnResizerClass(table, options);
+      }});
+    }})();
   </script>
   <div class="mm-modal" id="mm-modal" aria-hidden="true">
     <div class="mm-tools">
@@ -816,10 +1153,15 @@ async def render_md(request: Request, file_path: str) -> Response:
   </script>
   <style>
     @media (max-width: 760px) {{
+      .topbar {{ align-items: flex-start; flex-wrap: wrap; padding: 8px; }}
+      .breadcrumbs {{ width: 100%; }}
+      .breadcrumbs a, .breadcrumbs .current {{ max-width: 130px; }}
+      .topbar-actions {{ width: 100%; justify-content: flex-end; }}
       .page-layout {{ display: block; margin: 12px auto; padding: 0 10px; }}
       .toc-sidebar {{ width: auto; position: static; max-height: none; margin-bottom: 12px; }}
       .toc-resizer {{ display: none; }}
       .markdown-body {{ padding: 22px 18px; }}
+      .markdown-table-scroll {{ max-height: 65vh; }}
       .toc-toggle {{ margin-left: 6px; }}
     }}
     /* Images: keep thumbnails readable in narrow table cells; click to enlarge */

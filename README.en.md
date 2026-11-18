@@ -9,6 +9,10 @@ A lightweight file server and data viewer for engineers. It provides directory b
 ### File management
 
 - Browse local directories and files with URL paths that map directly to the filesystem.
+- Load directory listings through `GET /api/list/{path}` and render them with Tabulator.
+- Copy the current absolute directory, Markdown, or table path with one click.
+- Filename clicks open Markdown for `.md`, the table viewer for `.tsv`/`.csv`, and download all other files.
+- The list and Markdown pages share the same breadcrumb component, with horizontal scrolling for long paths.
 - Upload files to a target directory through the UI or API.
 - Download original files.
 - Convert TSV, CSV, and JSON Lines data into Excel workbooks.
@@ -22,14 +26,18 @@ A lightweight file server and data viewer for engineers. It provides directory b
 - Automatically format JSON values inside cells.
 - Render image URL previews.
 - Load ragged TSV/CSV files in compatibility mode and show a warning.
+- The tabular viewer uses Tabulator with column resizing, a frozen first column, visibility controls, and persisted layout.
+- The page header can copy the absolute path of the current table file.
 
 ### Markdown viewer
 
-- Render GitHub-style Markdown with tables, code highlighting, and Mermaid diagrams.
+- Render GitHub-style Markdown with code highlighting and Mermaid diagrams.
+- Give Markdown tables a dedicated scroll viewport with a sticky header, horizontal scrolling, draggable column widths, and column-width persistence within the browser session.
 - Generate a table-of-contents sidebar automatically.
 - Resize the sidebar by dragging, or collapse and expand it.
 - Persist sidebar width and collapsed state in browser `localStorage`.
 - Add copy buttons to code blocks.
+- Use the same breadcrumbs as the directory page and provide a button to copy the current Markdown file's absolute path.
 - Download a rendered HTML document that keeps these interactions.
 
 ## Quick start
@@ -134,8 +142,9 @@ Override the server address with `--host`, `--port`, and `--scheme`. Defaults ar
 
 ### Browse and view
 
-- `GET /list/{path}`: Browse a directory. File paths redirect to the appropriate viewer.
-- `GET /tsv/{path}`: Open the tabular viewer.
+- `GET /list/{path}`: Browse a directory. `.md`, `.tsv`, and `.csv` files open a viewer; other files download.
+- `GET /api/list/{path}`: Return absolute path, directory entries, metadata, breadcrumbs, and default-open/preview/download URLs as JSON.
+- `GET /tsv/{path}`: Open the Tabulator tabular viewer.
   - `start`: Starting row, default `0`.
   - `length`: Number of rows, default `1000`.
   - `key` / `value`: Filter by column name and value.
@@ -164,14 +173,14 @@ Override the server address with `--host`, `--port`, and `--scheme`. Defaults ar
 
 - Backend: Python, FastAPI, Pandas, and Aiofiles.
 - Templates: Jinja2 and native HTML.
-- Table interactions: jQuery DataTables and extensions.
-- Markdown: Python-Markdown, code highlighting, and Mermaid.
+- Table interactions: Tabulator.
+- Markdown: Python-Markdown, code highlighting, Mermaid, and column-resizer.
 - Caching: `cachetools` caches loaded DataFrames for 48 hours by default.
 
 ## Notes
 
 - File paths are relative to the service process's current working directory.
-- Downloaded Markdown HTML loads Mermaid, syntax highlighting, and GitHub Markdown styles from CDNs. Those resources may not load in an offline environment.
+- Markdown HTML and the tabular viewer load Mermaid, column-resizer, Tabulator, syntax highlighting, and styles from CDNs. Those resources may not load in an offline environment.
 - Large files are currently loaded into memory as DataFrames. Monitor process memory for very large inputs.
 
 ## Roadmap

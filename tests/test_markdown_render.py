@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
+from pathlib import Path
 
 import fserver
 
@@ -30,6 +32,38 @@ class MarkdownRenderTests(unittest.TestCase):
         html = render("price (a) [b] `$x$`\n\n```sh\necho $HOME $PATH\n```\n")
         self.assertNotIn("arithmatex", html)
         self.assertIn("codehilite", html)
+
+    def test_markdown_tables_are_wrapped_for_scrolling_and_resizing(self):
+        html = render("| alpha | beta |\n| --- | --- |\n| one | two |\n")
+        wrapped = fserver._wrap_markdown_tables(html)
+        self.assertIn('class="markdown-table-scroll"', wrapped)
+        self.assertIn('tabindex="0"', wrapped)
+        self.assertIn('data-markdown-table="1"', wrapped)
+        self.assertIn("<table>", wrapped)
+
+    def test_each_markdown_table_gets_a_unique_wrapper(self):
+        html = (
+            "<table><thead><tr><th>A</th></tr></thead></table>"
+            "<p>between</p>"
+            "<table><thead><tr><th>B</th></tr></thead></table>"
+        )
+        wrapped = fserver._wrap_markdown_tables(html)
+        self.assertIn('data-markdown-table="1"', wrapped)
+        self.assertIn('data-markdown-table="2"', wrapped)
+        self.assertEqual(wrapped.count('class="markdown-table-scroll"'), 2)
+
+    def test_markdown_page_uses_shared_breadcrumb_component(self):
+        html = asyncio.run(
+            fserver.render_markdown_file(Path("tests/fixtures/wide-table.md"))
+        )
+        self.assertIn('class="breadcrumbs"', html)
+        self.assertIn('href="/list/"', html)
+        self.assertIn(
+            '<span class="current" title="wide-table.md">wide-table.md</span>',
+            html,
+        )
+        self.assertIn("copy-path-button", html)
+        self.assertIn(str(Path("tests/fixtures/wide-table.md").resolve()), html)
 
 
 if __name__ == "__main__":

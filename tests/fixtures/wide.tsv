@@ -1,0 +1,13 @@
+id	name	category	owner	status	updated_at	score	summary	tags	region	note	link
+1	Alpha	research	alice	active	2026-11-18	98.5	A deliberately long summary used to verify horizontal scrolling and content sizing	tag-a,tag-b	beijing	first row	https://example.com/alpha
+2	Beta	data	bob	pending	2026-11-17	87.0	Another long summary that should not force the page itself to become wider	tag-c	shanghai	second row	https://example.com/beta
+3	Gamma	engineering	carol	active	2026-11-16	76.25	A third row with enough text to exercise automatic column widths	tag-d,tag-e	shenzhen	third row	https://example.com/gamma
+4	Delta	research	dave	archived	2026-11-15	65.0	Short text	tag-f	hangzhou	fourth row	https://example.com/delta
+5	Epsilon	data	erin	active	2026-11-14	54.75	Longer content for a narrow screen test	tag-g,tag-h	chengdu	fifth row	https://example.com/epsilon
+6	Zeta	engineering	frank	pending	2026-11-13	43.5	The table should scroll inside its own viewport	tag-i	nanjing	sixth row	https://example.com/zeta
+7	Eta	research	grace	active	2026-11-12	32.25	The header should remain visible while scrolling vertically	tag-j,tag-k	wuhan	seventh row	https://example.com/eta
+8	Theta	data	heidi	archived	2026-11-11	21.0	Column widths should be resizable and persist	tag-l	xian	eighth row	https://example.com/theta
+9	Iota	engineering	ivan	active	2026-11-10	19.5	Double-clicking a resize handle should fit the column	tag-m,tag-n	suzhou	ninth row	https://example.com/iota
+10	Kappa	research	judy	pending	2026-11-09	18.0	The filename must remain visible during scrolling	tag-o	qingdao	tenth row	https://example.com/kappa
+11	Lambda	data	ken	active	2026-11-08	17.25	The table must not create body-level horizontal overflow	tag-p	tianjin	eleventh row	https://example.com/lambda
+12	Mu	engineering	laura	archived	2026-11-07	16.0	The reset action should restore automatic sizing	tag-q,q	xianggang	twelfth row	https://example.com/mu
