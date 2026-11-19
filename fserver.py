@@ -721,7 +721,10 @@ async def render_md(request: Request, file_path: str) -> Response:
       max-height: 80vh;
       margin: 16px 0;
       overflow: auto;
-      overscroll-behavior: contain;
+      /* Vertical wheel scrolling chains to the page at the table's top/bottom;
+         horizontal overscroll stays contained to avoid back-swipe navigation. */
+      overscroll-behavior-x: contain;
+      overscroll-behavior-y: auto;
       background: #fff;
       border: 1px solid #d0d7de;
       border-radius: 6px;

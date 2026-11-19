@@ -65,6 +65,13 @@ class MarkdownRenderTests(unittest.TestCase):
         self.assertIn("copy-path-button", html)
         self.assertIn(str(Path("tests/fixtures/wide-table.md").resolve()), html)
 
+    def test_table_vertical_scroll_chains_to_page(self):
+        html = asyncio.run(
+            fserver.render_markdown_file(Path("tests/fixtures/wide-table.md"))
+        )
+        self.assertIn("overscroll-behavior-y: auto;", html)
+        self.assertNotIn("overscroll-behavior: contain;", html)
+
 
 if __name__ == "__main__":
     unittest.main()
